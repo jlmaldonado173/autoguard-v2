@@ -12,7 +12,7 @@ import time
 import streamlit.components.v1 as components
 
 # --- 1. CONFIGURACIÓN Y COLORES ---
-st.set_page_config(page_title="AutoGuard Elite V2.8", layout="wide", page_icon="🚌", initial_sidebar_state="expanded")
+st.set_page_config(page_title="AutoGuard Elite V2.9", layout="wide", page_icon="🚌", initial_sidebar_state="expanded")
 
 CAT_COLORS = {
     "Frenos": "#22c55e",       # Verde
@@ -24,20 +24,18 @@ CAT_COLORS = {
     "Otro": "#64748b"          # Gris
 }
 
-# --- 2. ESTILOS CSS (DISEÑO MÓVIL Y ESCRITORIO) ---
+# --- 2. ESTILOS CSS ---
 st.markdown(f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
     html, body, [class*="st-"] {{ font-family: 'Inter', sans-serif; }}
     .stApp {{ background-color: #f8fafc; }}
     
-    /* Estilo de Tarjetas y Botones */
     .stButton>button {{
         border-radius: 15px;
         height: 3.5rem;
         font-weight: 700;
         text-transform: uppercase;
-        letter-spacing: 1px;
         transition: all 0.3s;
     }}
     
@@ -70,16 +68,18 @@ st.markdown(f"""
 # --- 3. FUNCIONES DE APOYO ---
 def process_img(file):
     if file is None: return None
-    img = Image.open(file)
-    img.thumbnail((500, 500))
-    buffered = BytesIO()
-    img.save(buffered, format="JPEG", quality=75)
-    return base64.b64encode(buffered.getvalue()).decode()
+    try:
+        img = Image.open(file)
+        img.thumbnail((500, 500))
+        buffered = BytesIO()
+        img.save(buffered, format="JPEG", quality=75)
+        return base64.b64encode(buffered.getvalue()).decode()
+    except: return None
 
 def session_persistence_js():
     components.html("""
         <script>
-        const stored = window.localStorage.getItem('autoguard_v28_session');
+        const stored = window.localStorage.getItem('autoguard_v29_session');
         if (stored && !window.parent.location.search.includes('session=')) {
             window.parent.location.search = '?session=' + encodeURIComponent(stored);
         }
@@ -87,10 +87,10 @@ def session_persistence_js():
     """, height=0)
 
 def save_session_js(data):
-    components.html(f"<script>window.localStorage.setItem('autoguard_v28_session', '{json.dumps(data)}');</script>", height=0)
+    components.html(f"<script>window.localStorage.setItem('autoguard_v29_session', '{json.dumps(data)}');</script>", height=0)
 
 def clear_session_js():
-    components.html("<script>window.localStorage.removeItem('autoguard_v28_session'); window.parent.location.search = '';</script>", height=0)
+    components.html("<script>window.localStorage.removeItem('autoguard_v29_session'); window.parent.location.search = '';</script>", height=0)
 
 # --- 4. FIREBASE ---
 @st.cache_resource
@@ -115,15 +115,14 @@ def get_ref(col):
 if 'user' not in st.session_state: st.session_state.user = None
 if 'page' not in st.session_state: st.session_state.page = "🏠 Inicio"
 
-# Recuperar sesión persistente
 if st.session_state.user is None and "session" in st.query_params:
     try: st.session_state.user = json.loads(st.query_params["session"])
     except: pass
 if st.session_state.user is None: session_persistence_js()
 
-# --- 6. VISTA: ACCESO (LOGIN) ---
+# --- 6. VISTA: ACCESO ---
 if st.session_state.user is None:
-    st.markdown("<h1 style='text-align:center;'>🛡️ AutoGuard Elite V2.8</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align:center;'>🛡️ AutoGuard Elite V2.9</h1>", unsafe_allow_html=True)
     t1, t2 = st.tabs(["👨‍✈️ Conductores", "🛡️ Administradores"])
     with t1:
         with st.form("d_login"):
@@ -143,23 +142,18 @@ if st.session_state.user is None:
                 st.session_state.user = user
                 save_session_js(user); st.rerun()
 
-# --- 7. VISTA: APP PRINCIPAL (SISTEMA HÍBRIDO) ---
+# --- 7. VISTA: APP PRINCIPAL ---
 else:
     u = st.session_state.user
-    
-    # NAVBAR SUPERIOR
     st.markdown(f"<div class='navbar'><span>👤 {u['name']}</span><span><b>{u['fleet']}</b></span></div>", unsafe_allow_html=True)
 
-    # --- SIDEBAR (EL MENÚ QUE VOLVIÓ) ---
     with st.sidebar:
         st.title("MENÚ")
-        if u['role'] == 'owner':
-            nav_options = ["🏠 Inicio", "🛠️ Reportar Daño", "📋 Historial y Pagos", "👨‍🔧 Mecánicos", "🏢 Casas Comerciales", "📦 Repuestos", "🧠 Auditoría IA"]
-        else:
-            nav_options = ["🏠 Inicio", "🛠️ Reportar Daño", "📋 Mis Reportes"]
-            
-        # Actualizar página desde el sidebar
-        selection = st.radio("Ir a:", nav_options, index=nav_options.index(st.session_state.page) if st.session_state.page in nav_options else 0)
+        nav_options = ["🏠 Inicio", "🛠️ Reportar Daño", "📋 Historial y Pagos", "👨‍🔧 Mecánicos", "🏢 Casas Comerciales", "📦 Repuestos"] if u['role'] == 'owner' else ["🏠 Inicio", "🛠️ Reportar Daño", "📋 Mis Reportes"]
+        
+        # Sincronizar selección
+        current_idx = nav_options.index(st.session_state.page) if st.session_state.page in nav_options else 0
+        selection = st.radio("Ir a:", nav_options, index=current_idx)
         if selection != st.session_state.page:
             st.session_state.page = selection
             st.rerun()
@@ -168,101 +162,113 @@ else:
         if st.button("🚪 CERRAR SESIÓN", type="primary", use_container_width=True):
             clear_session_js(); st.session_state.user = None; st.rerun()
 
-    # --- PÁGINA: INICIO (CON BOTONES TÁCTILES) ---
+    # PÁGINA: INICIO
     if st.session_state.page == "🏠 Inicio":
         st.header("📊 Resumen de Flota")
+        logs_stream = get_ref("maintenance_logs").stream()
+        logs = [l.to_dict() for l in logs_stream if l.to_dict().get('fleetId') == u['fleet']]
         
-        logs = [l.to_dict() for l in get_ref("maintenance_logs").stream() if l.to_dict().get('fleetId') == u['fleet']]
         if logs:
             df = pd.DataFrame(logs)
+            
+            # --- RED DE SEGURIDAD (FIX KEYERROR) ---
+            for col in ['paid', 'cost', 'category', 'busNumber', 'part_name']:
+                if col not in df.columns:
+                    df[col] = False if col == 'paid' else (0.0 if col == 'cost' else "N/A")
+
             if u['role'] == 'driver': df = df[df['busNumber'] == u['bus']]
+            
             c1, c2 = st.columns(2)
             c1.metric("Gasto Total", f"${df['cost'].sum():,.2f}")
-            c2.metric("Pendiente", f"${df[df.get('paid', False)==False]['cost'].sum():,.2f}")
-        
+            # Filtro seguro para pendientes
+            total_pendiente = df[df['paid'] == False]['cost'].sum()
+            c2.metric("Pendiente", f"${total_pendiente:,.2f}")
+            
+            st.subheader("Gastos por Sección")
+            if not df.empty:
+                st.bar_chart(df.groupby('category')['cost'].sum())
+        else:
+            st.info("👋 Aún no hay reportes. Registra el primero para ver estadísticas.")
+
         st.divider()
         st.subheader("📱 ACCESO RÁPIDO")
-        
-        # Botones para navegación táctil (Por si el sidebar se esconde)
-        if u['role'] == 'owner':
-            col1, col2 = st.columns(2)
-            if col1.button("🛠️ REPORTAR\nARREGLO", use_container_width=True): st.session_state.page = "🛠️ Reportar Daño"; st.rerun()
-            if col2.button("📋 VER\nHISTORIAL", use_container_width=True): st.session_state.page = "📋 Historial y Pagos"; st.rerun()
-            
-            col3, col4 = st.columns(2)
-            if col3.button("👨‍🔧 VER\nMECÁNICOS", use_container_width=True): st.session_state.page = "👨‍🔧 Mecánicos"; st.rerun()
-            if col4.button("🏢 CASAS\nCOMERCIALES", use_container_width=True): st.session_state.page = "🏢 Casas Comerciales"; st.rerun()
-        else:
-            if st.button("🛠️ NUEVO REPORTE DE DAÑO", use_container_width=True): st.session_state.page = "🛠️ Reportar Daño"; st.rerun()
-            if st.button("📋 VER MIS ARREGLOS", use_container_width=True): st.session_state.page = "📋 Mis Reportes"; st.rerun()
+        col1, col2 = st.columns(2)
+        if col1.button("🛠️ REPORTAR\nDAÑO", use_container_width=True): st.session_state.page = "🛠️ Reportar Daño"; st.rerun()
+        hist_label = "📋 VER\nHISTORIAL" if u['role'] == 'owner' else "📋 MIS\nREPORTES"
+        if col2.button(hist_label, use_container_width=True): st.session_state.page = "📋 Historial y Pagos" if u['role'] == 'owner' else "📋 Mis Reportes"; st.rerun()
 
-    # --- PÁGINA: REPORTAR DAÑO ---
+    # PÁGINA: REPORTAR
     elif st.session_state.page == "🛠️ Reportar Daño":
-        st.subheader(f"🛠️ Reporte Unidad {u.get('bus', 'ADMIN')}")
-        if st.button("⬅️ VOLVER AL INICIO"): st.session_state.page = "🏠 Inicio"; st.rerun()
+        st.subheader(f"🛠️ Nuevo Reporte - Unidad {u.get('bus', 'ADMIN')}")
+        if st.button("⬅️ VOLVER"): st.session_state.page = "🏠 Inicio"; st.rerun()
         
+        # Cargar selectores
         mecs = [m.to_dict()['name'] for m in get_ref("mechanics").stream() if m.to_dict().get('fleetId') == u['fleet']]
         casas = [c.to_dict()['name'] for c in get_ref("suppliers").stream() if c.to_dict().get('fleetId') == u['fleet']]
         
-        with st.form("f_v28"):
+        with st.form("f_v29"):
             cat = st.selectbox("Sección (Color)", list(CAT_COLORS.keys()))
             p_name = st.text_input("¿Qué se arregló? (Ej: Rodillos)")
             det = st.text_area("Detalle")
             cost = st.number_input("Costo Total $", min_value=0.0)
-            foto = st.camera_input("📸 Toma foto del arreglo/factura")
+            foto = st.camera_input("📸 Evidencia del arreglo")
             m_sel = st.selectbox("Mecánico", ["Externo"] + mecs)
             c_sel = st.selectbox("Casa Comercial", ["Otro"] + casas)
-            paid = st.checkbox("¿Ya está pagado?")
+            is_paid = st.checkbox("¿Ya está pagado?")
             
             if st.form_submit_button("🚀 GUARDAR REPORTE"):
-                img_data = process_img(foto)
-                get_ref("maintenance_logs").add({
-                    'fleetId': u['fleet'], 'busNumber': u.get('bus', 'ADMIN'),
-                    'category': cat, 'part_name': p_name, 'description': det,
-                    'cost': cost, 'paid': paid, 'mechanic': m_sel, 'supplier': c_sel,
-                    'image': img_data, 'date': datetime.now().strftime("%d/%m/%Y"), 'createdAt': datetime.now()
-                })
-                st.success("✅ ¡Guardado!"); time.sleep(1); st.session_state.page = "🏠 Inicio"; st.rerun()
+                with st.spinner("Guardando..."):
+                    img_data = process_img(foto)
+                    get_ref("maintenance_logs").add({
+                        'fleetId': u['fleet'], 'busNumber': u.get('bus', 'ADMIN'),
+                        'category': cat, 'part_name': p_name, 'description': det,
+                        'cost': cost, 'paid': is_paid, 'mechanic': m_sel, 'supplier': c_sel,
+                        'image': img_data, 'date': datetime.now().strftime("%d/%m/%Y"), 'createdAt': datetime.now()
+                    })
+                    st.success("✅ ¡Reporte guardado!"); time.sleep(1); st.session_state.page = "🏠 Inicio"; st.rerun()
 
-    # --- PÁGINA: HISTORIAL ---
+    # PÁGINA: HISTORIAL
     elif "Historial" in st.session_state.page or "Reportes" in st.session_state.page:
-        st.subheader("📋 Historial y Control de Pagos")
-        if st.button("⬅️ VOLVER AL INICIO"): st.session_state.page = "🏠 Inicio"; st.rerun()
+        st.subheader("📋 Historial y Pagos")
+        if st.button("⬅️ VOLVER"): st.session_state.page = "🏠 Inicio"; st.rerun()
         
-        logs = [{"id": l.id, **l.to_dict()} for l in get_ref("maintenance_logs").stream() if l.to_dict().get('fleetId') == u['fleet']]
+        logs_stream = get_ref("maintenance_logs").stream()
+        logs = [{"id": l.id, **l.to_dict()} for l in logs_stream if l.to_dict().get('fleetId') == u['fleet']]
         if u['role'] == 'driver': logs = [l for l in logs if l.get('busNumber') == u['bus']]
 
-        for l in sorted(logs, key=lambda x: x['createdAt'], reverse=True):
-            color = CAT_COLORS.get(l['category'], "#64748b")
-            st.markdown(f"""
-            <div class='card' style='border-left: 10px solid {color};'>
-                <div style='display:flex; justify-content:space-between'>
-                    <span style='background:{color}; color:white; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:bold;'>{l['category']}</span>
-                    <span class='status-badge {"paid" if l.get("paid") else "pending"}'>{"PAGADO" if l.get("paid") else "DEUDA"}</span>
+        if logs:
+            for l in sorted(logs, key=lambda x: x.get('createdAt', datetime.now()), reverse=True):
+                color = CAT_COLORS.get(l.get('category'), "#64748b")
+                paid_status = l.get('paid', False)
+                st.markdown(f"""
+                <div class='card' style='border-left: 10px solid {color};'>
+                    <div style='display:flex; justify-content:space-between'>
+                        <span style='background:{color}; color:white; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:bold;'>{l.get('category')}</span>
+                        <span class='status-badge {"paid" if paid_status else "pending"}'>{"PAGADO" if paid_status else "DEUDA"}</span>
+                    </div>
+                    <h4 style='margin:10px 0;'>{l.get('part_name', 'Arreglo')} - Bus {l.get('busNumber')}</h4>
+                    <p style='font-size:14px; margin-bottom:5px;'><b>Costo:</b> ${l.get('cost', 0):,.2f} | <b>Mecánico:</b> {l.get('mechanic', 'Externo')}</p>
                 </div>
-                <h4 style='margin:10px 0;'>{l.get('part_name')} - Bus {l.get('busNumber')}</h4>
-                <p><b>Mecánico:</b> {l.get('mechanic')} | <b>Costo:</b> ${l['cost']:,.2f}</p>
-            </div>
-            """, unsafe_allow_html=True)
-            if l.get('image'):
-                with st.expander("🖼️ Ver Foto"): st.image(base64.b64decode(l['image']), use_container_width=True)
-            if not l.get('paid') and u['role'] == 'owner':
-                if st.button(f"Saldar Deuda {l['id'][:4]}", key=l['id']):
-                    get_ref("maintenance_logs").document(l['id']).update({"paid": True}); st.rerun()
+                """, unsafe_allow_html=True)
+                if l.get('image'):
+                    with st.expander("🖼️ Ver Evidencia"): st.image(base64.b64decode(l['image']), use_container_width=True)
+                if not paid_status and u['role'] == 'owner':
+                    if st.button(f"Marcar como Pagado ({l['id'][:4]})", key=l['id']):
+                        get_ref("maintenance_logs").document(l['id']).update({"paid": True}); st.rerun()
+        else: st.info("No hay registros aún.")
 
-    # --- PÁGINA: MECÁNICOS ---
+    # PÁGINA: MECÁNICOS
     elif st.session_state.page == "👨‍🔧 Mecánicos":
-        st.subheader("👨‍🔧 Directorio de Mecánicos")
-        if st.button("⬅️ VOLVER AL INICIO"): st.session_state.page = "🏠 Inicio"; st.rerun()
-        
-        with st.form("f_mec_v28"):
+        st.subheader("👨‍🔧 Gestión de Mecánicos")
+        if st.button("⬅️ VOLVER"): st.session_state.page = "🏠 Inicio"; st.rerun()
+        with st.form("f_mec_v29"):
             m_n = st.text_input("Nombre"); m_t = st.text_input("WhatsApp"); m_e = st.selectbox("Especialidad", list(CAT_COLORS.keys()))
-            if st.form_submit_button("Guardar Mecánico"):
+            if st.form_submit_button("Guardar"):
                 get_ref("mechanics").add({'fleetId':u['fleet'], 'name':m_n, 'phone':m_t, 'specialty':m_e})
-                st.success("Registrado"); st.rerun()
+                st.success("Mecánico registrado"); st.rerun()
         
         m_list = [m.to_dict() for m in get_ref("mechanics").stream() if m.to_dict().get('fleetId') == u['fleet']]
-        for m in m_list: st.write(f"✅ **{m['name']}** - 📞 {m['phone']} ({m['specialty']})")
+        for m in m_list: st.write(f"✅ **{m['name']}** - {m['specialty']}")
 
-st.caption(f"AutoGuard V2.8 | Navegación Híbrida | ID: {app_id}")
+st.caption(f"AutoGuard V2.9 | Estabilidad Máxima | ID: {app_id}")
 
