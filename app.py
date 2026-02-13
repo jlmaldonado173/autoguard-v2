@@ -5,13 +5,10 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 import json
 import base64
-from io import BytesIO
-from PIL import Image
-import requests
 import time
 import streamlit.components.v1 as components
 
-# --- 1. CONFIGURACIÓN E IDENTIDAD ---
+# --- 1. CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
     page_title="Itero", 
     layout="wide", 
@@ -19,54 +16,48 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Colores de marca (Semáforo solicitado)
-CAT_COLORS = {
-    "Frenos": "#22c55e", "Caja": "#ef4444", "Motor": "#3b82f6",
-    "Suspensión": "#f59e0b", "Llantas": "#a855f7", "Eléctrico": "#06b6d4", "Otro": "#64748b"
-}
-
-# --- 2. DISEÑO CSS (OPTIMIZADO PARA MÓVIL) ---
-st.markdown(f"""
+# --- 2. DISEÑO CSS PROFESIONAL ---
+st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap');
-    html, body, [class*="st-"] {{ font-family: 'Plus Jakarta Sans', sans-serif; }}
-    .stApp {{ background-color: #f8fafc; }}
+    html, body, [class*="st-"] { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .stApp { background-color: #f8fafc; }
     
-    /* Barra Superior Personalizada */
-    .top-bar {{
+    /* Barra superior de estado */
+    .top-bar {
         background: #1e293b; color: white; padding: 12px 20px;
         position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
         display: flex; justify-content: space-between; align-items: center;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    }}
-    .main-content {{ margin-top: 80px; }}
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .main-container { margin-top: 80px; }
     
-    /* Botones Grandes */
-    .stButton>button {{
+    /* Estilo de botones táctiles */
+    .stButton>button {
         border-radius: 16px; height: 3.5rem; font-weight: 700;
-        text-transform: uppercase; transition: all 0.3s;
-    }}
+        text-transform: uppercase; width: 100%; transition: all 0.3s;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. FUNCIONES CORE (PERSISTENCIA Y LOGO) ---
+# --- 3. FUNCIONES DE INFRAESTRUCTURA ---
 
 def show_logo(width=150, centered=True):
-    """Muestra el logo 1000110802.png con manejo de errores"""
+    """Muestra el logo 1000110802.png"""
     if centered:
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             try: st.image("1000110802.png", use_container_width=True)
-            except: st.markdown("### 🔄 ITERO")
+            except: st.markdown("<h1 style='text-align:center;'>🔄 ITERO</h1>", unsafe_allow_html=True)
     else:
         try: st.image("1000110802.png", width=width)
         except: st.markdown("### 🔄")
 
 def session_persistence():
-    """Script para mantener al usuario logueado en el navegador"""
+    """Mantiene la sesión activa en el navegador del usuario"""
     components.html("""
         <script>
-        const stored = window.localStorage.getItem('itero_v11_session');
+        const stored = window.localStorage.getItem('itero_v12_session');
         const urlParams = new URLSearchParams(window.parent.location.search);
         if (stored && !urlParams.has('session')) {
             window.parent.location.search = '?session=' + encodeURIComponent(stored);
@@ -74,29 +65,27 @@ def session_persistence():
         </script>
     """, height=0)
 
-# --- 4. CONEXIÓN FIREBASE (REGLAS 1, 2, 3) ---
+# --- 4. CONEXIÓN A BASE DE DATOS (FIREBASE) ---
 @st.cache_resource
 def init_db():
     if not firebase_admin._apps:
         try:
-            # Asegúrate de tener FIREBASE_JSON en tus Secrets de Streamlit
             if "FIREBASE_JSON" in st.secrets:
                 cred = credentials.Certificate(json.loads(st.secrets["FIREBASE_JSON"]))
                 firebase_admin.initialize_app(cred)
             else:
-                # Local fallback
                 firebase_admin.initialize_app(credentials.Certificate("firebase_key.json"))
         except: return None
     return firestore.client()
 
 db = init_db()
-app_id = "itero-v11-main" # ID para esta nueva estructura limpia
+app_id = "itero-v12-main" # Nueva ruta limpia para evitar choques con versiones viejas
 
 def get_ref(collection_name):
-    """Referencia estricta siguiendo la Regla 1"""
+    """Obtiene la referencia a la base de datos (Regla 1)"""
     return db.collection("artifacts").document(app_id).collection("public").document("data").collection(collection_name)
 
-# --- 5. INICIALIZACIÓN DE ESTADO ---
+# --- 5. GESTIÓN DE ESTADO ---
 session_persistence()
 
 if 'user' not in st.session_state:
@@ -107,58 +96,61 @@ if 'user' not in st.session_state:
         st.session_state.user = None
 
 if 'page' not in st.session_state:
-    st.session_state.page = "🏠 Dashboard"
+    st.session_state.page = "🏠 Inicio"
 
-# --- 6. PANTALLA DE LOGIN (MODULAR) ---
+# --- 6. PANTALLA DE INGRESO (MENU INICIAL) ---
 def login_screen():
     show_logo()
     st.markdown("<h2 style='text-align:center;'>Bienvenido a Itero</h2>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align:center; color:gray;'>Gestión de Mantenimiento de Flota</p>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align:center; color:#64748b;'>Gestión Inteligente de Vehículos</p>", unsafe_allow_html=True)
     
-    t1, t2 = st.tabs(["👨‍✈️ Conductor", "🛡️ Administrador"])
+    t1, t2 = st.tabs(["👨‍✈️ Conductor", "🛡️ Propietario"])
     
     with t1:
-        with st.form("form_driver"):
-            f_id = st.text_input("Código de Flota")
-            u_n = st.text_input("Tu Nombre")
-            u_b = st.text_input("Número de Bus")
+        with st.form("login_driver"):
+            f_id = st.text_input("Código de Flota (Ej: FLOTA01)")
+            u_n = st.text_input("Nombre del Conductor")
+            u_b = st.text_input("Número de Unidad / Bus")
             if st.form_submit_button("INGRESAR"):
-                user = {'role':'driver', 'fleet':f_id.upper(), 'name':u_n, 'bus':u_b}
-                st.session_state.user = user
-                # Guardar sesión físicamente
-                components.html(f"<script>window.localStorage.setItem('itero_v11_session', '{json.dumps(user)}'); window.parent.location.search = '?session=' + encodeURIComponent('{json.dumps(user)}');</script>", height=0)
-                st.rerun()
-                
-    with t2:
-        with st.form("form_owner"):
-            f_o = st.text_input("Código de Flota")
-            o_n = st.text_input("Nombre de Propietario")
-            if st.form_submit_button("ACCESO ADMINISTRATIVO"):
-                user = {'role':'owner', 'fleet':f_o.upper(), 'name':o_n}
-                st.session_state.user = user
-                components.html(f"<script>window.localStorage.setItem('itero_v11_session', '{json.dumps(user)}'); window.parent.location.search = '?session=' + encodeURIComponent('{json.dumps(user)}');</script>", height=0)
-                st.rerun()
+                if f_id and u_n and u_b:
+                    user_data = {'role':'driver', 'fleet':f_id.upper().strip(), 'name':u_n, 'bus':u_b}
+                    st.session_state.user = user_data
+                    # Guardar en memoria del navegador
+                    components.html(f"<script>window.localStorage.setItem('itero_v12_session', '{json.dumps(user_data)}'); window.parent.location.search = '?session=' + encodeURIComponent('{json.dumps(user_data)}');</script>", height=0)
+                    st.rerun()
+                else: st.error("Por favor llena todos los campos.")
 
-# --- 7. APLICACIÓN PRINCIPAL ---
+    with t2:
+        with st.form("login_owner"):
+            f_o = st.text_input("Código de Flota (Crea uno nuevo si no tienes)")
+            o_n = st.text_input("Nombre del Propietario")
+            if st.form_submit_button("ACCESO TOTAL"):
+                if f_o and o_n:
+                    user_data = {'role':'owner', 'fleet':f_o.upper().strip(), 'name':o_n}
+                    st.session_state.user = user_data
+                    components.html(f"<script>window.localStorage.setItem('itero_v12_session', '{json.dumps(user_data)}'); window.parent.location.search = '?session=' + encodeURIComponent('{json.dumps(user_data)}');</script>", height=0)
+                    st.rerun()
+                else: st.error("Por favor llena todos los campos.")
+
+# --- 7. LOGICA DE LA APP (MENU Y NAVEGACIÓN) ---
 if st.session_state.user is None:
     login_screen()
 else:
     u = st.session_state.user
-    # Barra superior con marca
+    # Barra de estado superior
     st.markdown(f"<div class='top-bar'><span>🛡️ {u['fleet']}</span><span>👤 {u['name']}</span></div><div class='main-content'></div>", unsafe_allow_html=True)
 
-    # --- NAVEGACIÓN (MENU LATERAL) ---
     with st.sidebar:
         show_logo(width=80, centered=False)
-        st.title("Menú")
+        st.title("Menu")
         
-        # Opciones dinámicas según rol
+        # Opciones según el rol (Intercomunicación)
         if u['role'] == 'owner':
-            menu_options = ["🏠 Dashboard", "🛠️ Nuevo Reporte", "📋 Historial General", "👨‍🔧 Mecánicos", "🏢 Casas Comerciales"]
+            options = ["🏠 Inicio", "🛠️ Reportar Arreglo", "📋 Historial General", "👨‍🔧 Mecánicos", "🏢 Casas Comerciales"]
         else:
-            menu_options = ["🏠 Dashboard", "🛠️ Nuevo Reporte", "📋 Mis Arreglos"]
+            options = ["🏠 Inicio", "🛠️ Reportar Arreglo", "📋 Mis Reportes"]
             
-        selection = st.radio("Ir a:", menu_options, index=menu_options.index(st.session_state.page) if st.session_state.page in menu_options else 0)
+        selection = st.radio("Ir a:", options, index=options.index(st.session_state.page) if st.session_state.page in options else 0)
         
         if selection != st.session_state.page:
             st.session_state.page = selection
@@ -167,20 +159,20 @@ else:
         st.divider()
         if st.button("🚪 Cerrar Sesión"):
             st.session_state.user = None
-            components.html("<script>window.localStorage.removeItem('itero_v11_session'); window.parent.location.search = '';</script>", height=0)
+            components.html("<script>window.localStorage.removeItem('itero_v12_session'); window.parent.location.search = '';</script>", height=0)
             st.rerun()
 
-    # --- ROUTER DE PÁGINAS (PARA IR AÑADIENDO POCO A POCO) ---
-    if st.session_state.page == "🏠 Dashboard":
-        st.header("📊 Estado de la Flota")
-        st.info("Aquí pondremos los resúmenes financieros y deudas.")
+    # --- ENRUTADOR DE PÁGINAS ---
+    if st.session_state.page == "🏠 Inicio":
+        st.header(f"📊 Dashboard - {u['role'].capitalize()}")
+        st.info("Estructura base cargada. Aquí se mostrarán los indicadores de gastos y deudas.")
         
-    elif st.session_state.page == "🛠️ Nuevo Reporte":
-        st.header("🛠️ Registrar Arreglo")
-        st.info("Aquí pondremos el formulario con cámara y selección de mecánicos.")
+    elif st.session_state.page == "🛠️ Reportar Arreglo":
+        st.header("🛠️ Registro de Mantenimiento")
+        st.info("Aquí insertaremos el formulario de reporte con cámara y categorías.")
         
-    elif "Historial" in st.session_state.page or "Arreglos" in st.session_state.page:
-        st.header("📋 Historial de Mantenimiento")
-        st.info("Aquí pondremos las tarjetas de colores y evidencias.")
+    elif "Historial" in st.session_state.page or "Reportes" in st.session_state.page:
+        st.header("📋 Carpeta de Registros")
+        st.info("Aquí aparecerán las tarjetas con los arreglos y las fotos.")
 
-st.caption(f"Itero V11.0 | Base Estructurada | ID: {app_id}")
+st.caption(f"Itero V12.0 | Estructura de Intercomunicación | ID: {app_id}")
