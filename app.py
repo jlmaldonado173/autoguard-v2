@@ -92,6 +92,14 @@ def process_img(file):
         img.save(buf, format="JPEG", quality=75)
         return base64.b64encode(buf.getvalue()).decode()
     except: return None
+def get_main_logo():
+    """Función para mostrar el logo centrado"""
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        try:
+            st.image("1000110802.png", use_container_width=True)
+        except:
+            st.markdown("### 🔄 ITERO") # Respaldo por si no carga
 
 def clean_phone(phone):
     clean = "".join(filter(str.isdigit, str(phone)))
@@ -157,6 +165,11 @@ if st.session_state.user is None:
                 st.session_state.user = u
                 components.html(f"<script>window.localStorage.setItem('itero_pro_session', '{json.dumps(u)}');</script>", height=0)
                 st.rerun()
+# --- PANTALLA DE ACCESO ---
+if st.session_state.user is None:
+    get_main_logo() # <--- AÑADE ESTO AQUÍ
+    st.markdown("<h1 style='text-align:center;'>Mantenimiento Inteligente</h1>", unsafe_allow_html=True)
+    # ... aquí siguen tus tabs de Conductores y Dueños
 
 # --- 7. APLICACIÓN PRINCIPAL ---
 else:
