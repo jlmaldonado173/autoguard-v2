@@ -7,8 +7,15 @@ import json
 import time
 import urllib.parse
 
+# Intentar cargar Plotly de forma segura (corrige error de la Imagen 1)
+try:
+    import plotly.express as px
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
+
 # --- 1. CONFIGURACIÓN E INICIALIZACIÓN ---
-st.set_page_config(page_title="Itaro ERP v33", layout="wide", page_icon="🔒")
+st.set_page_config(page_title="Itaro ERP v34", layout="wide", page_icon="🛡️")
 
 @st.cache_resource
 def init_db():
@@ -23,11 +30,11 @@ def init_db():
 
 db = init_db()
 APP_ID = "itero-titanium-v15"
-# Nodos de Seguridad y Datos
+# Nodos de base de datos
 FLEETS_REF = db.collection("artifacts").document(APP_ID).collection("registered_fleets")
 DATA_REF = db.collection("artifacts").document(APP_ID).collection("public").document("data")
 
-# --- 2. LÓGICA DE PERSISTENCIA (PARA NO PERDER LA SESIÓN) ---
+# --- 2. LÓGICA DE PERSISTENCIA ---
 if 'user' not in st.session_state:
     params = st.query_params
     if "f" in params and "u" in params:
@@ -37,123 +44,116 @@ if 'user' not in st.session_state:
         }
         st.rerun()
 
-# --- 3. PANTALLA DE INICIO DE SESIÓN (ESTO ES LO QUE TE FALTABA) ---
+# --- 3. SISTEMA DE ACCESO (LOGIN Y REGISTRO) ---
 if 'user' not in st.session_state:
     st.title("🛡️ Itaro | Acceso de Seguridad")
-    
-    # Pestañas para entrar o crear flota
     tab_log, tab_reg = st.tabs(["🔑 Iniciar Sesión", "🏗️ Registrar Nueva Flota"])
 
     with tab_log:
         with st.container(border=True):
-            f_id_log = st.text_input("Código de Flota (Ej: TAXI-LOJA)").upper().strip()
-            u_role = st.selectbox("Tipo de Usuario", ["Conductor", "Administrador/Dueño"])
-            u_name = st.text_input("Tu Nombre")
-            u_bus = st.text_input("Número de Bus/Unidad")
-            
+            f_id_log = st.text_input("Código de Flota").upper().strip()
+            u_role = st.selectbox("Rol", ["Conductor", "Administrador/Dueño"])
+            u_name = st.text_input("Nombre Usuario")
+            u_bus = st.text_input("N° de Unidad")
             if st.button("VERIFICAR E INGRESAR", use_container_width=True):
-                if not f_id_log:
-                    st.error("Ingresa el código de tu flota.")
+                if FLEETS_REF.document(f_id_log).get().exists:
+                    u_data = {'role':'owner' if "Adm" in u_role else 'driver', 'fleet':f_id_log, 'name':u_name, 'bus':u_bus}
+                    st.session_state.user = u_data
+                    st.query_params.update({"f": f_id_log, "u": u_name, "b": u_bus, "r": u_data['role']})
+                    st.rerun()
                 else:
-                    # Validamos que la flota exista en la base de datos
-                    if FLEETS_REF.document(f_id_log).get().exists:
-                        u_data = {
-                            'role': 'owner' if "Adm" in u_role else 'driver',
-                            'fleet': f_id_log, 'name': u_name, 'bus': u_bus
-                        }
-                        st.session_state.user = u_data
-                        # Guardamos en URL para que no pida login otra vez
-                        st.query_params.update({"f": f_id_log, "u": u_name, "b": u_bus, "r": u_data['role']})
-                        st.success("Acceso concedido...")
-                        time.sleep(1)
-                        st.rerun()
-                    else:
-                        st.error("❌ Código de Flota NO REGISTRADO. Ve a la pestaña de 'Registrar Nueva Flota'.")
+                    st.error("❌ Flota no registrada. Primero créala en la pestaña de al lado.")
 
     with tab_reg:
-        st.info("Solo Dueños: Crea aquí el ID único para tu flota.")
-        new_f_id = st.text_input("Crear Nuevo Código (Ej: BUS-RAPIDO)").upper().strip()
-        if st.button("REGISTRAR Y SER DUEÑO", use_container_width=True):
-            if new_f_id:
-                if not FLEETS_REF.document(new_f_id).get().exists:
-                    FLEETS_REF.document(new_f_id).set({"created_at": datetime.now(), "status": "active"})
-                    st.success(f"✅ Flota '{new_f_id}' creada. Ya puedes loguearte en la pestaña anterior.")
-                else:
-                    st.error("❌ Ese código ya está en uso. Prueba con otro.")
+        new_f = st.text_input("Crear Nuevo Código de Flota").upper().strip()
+        if st.button("CREAR FLOTA", use_container_width=True):
+            if new_f and not FLEETS_REF.document(new_f).get().exists:
+                FLEETS_REF.document(new_f).set({"created_at": datetime.now(), "status": "active"})
+                st.success(f"✅ Flota '{new_f}' registrada. Ya puedes ingresar.")
+            else: st.error("ID no válido o ya ocupado.")
 
-# --- 4. PANEL PRINCIPAL (SOLO SE VE SI ESTÁ LOGUEADO) ---
+# --- 4. MOTOR DE DATOS BLINDADO (Corrige errores de las imágenes 2, 3, 5 y 6) ---
 else:
     u = st.session_state.user
-    
-    # Barra lateral de información
-    st.sidebar.markdown(f"**Flota:** `{u['fleet']}`")
-    st.sidebar.markdown(f"**Usuario:** {u['name']}")
-    st.sidebar.markdown(f"**Unidad:** {u['bus']}")
-    
-    menu = ["🏠 Inicio", "🛠️ Taller", "💰 Contabilidad", "🏢 Directorio"]
-    choice = st.sidebar.radio("Navegación", menu)
 
-    # Función para cargar proveedores (Directorio)
-    def load_provs():
-        docs = DATA_REF.collection("providers").where("fleetId", "==", u['fleet']).stream()
-        return [p.to_dict() | {"id": p.id} for p in docs]
-
-    # --- MÓDULO: DIRECTORIO (LO QUE NECESITABAS) ---
-    if choice == "🏢 Directorio":
-        st.subheader("🏢 Directorio de Mecánicos y Comercios")
+    def load_safe_data():
+        # Carga de Logs
+        q_logs = DATA_REF.collection("logs").where("fleetId", "==", u['fleet'])
+        if u['role'] == 'driver': q_logs = q_logs.where("bus", "==", u['bus'])
+        logs = [l.to_dict() | {"id": l.id} for l in q_logs.stream()]
         
-        with st.expander("➕ Registrar Nuevo Aliado", expanded=True):
-            with st.form("new_prov"):
-                c1, c2, c3 = st.columns(3)
-                p_n = c1.text_input("Nombre / Local")
-                p_t = c2.text_input("WhatsApp (Ej: 593...)")
-                p_r = c3.selectbox("Tipo", ["Mecánico", "Comercio"])
-                if st.form_submit_button("Guardar"):
-                    if p_n and p_t:
-                        DATA_REF.collection("providers").add({
-                            "fleetId": u['fleet'], "name": p_n.upper(), "phone": p_t, "type": p_r
-                        })
-                        st.success("Guardado."); time.sleep(1); st.rerun()
+        # Carga de Proveedores (Para el error de la Imagen 6)
+        q_provs = DATA_REF.collection("providers").where("fleetId", "==", u['fleet']).stream()
+        provs = [p.to_dict() | {"id": p.id} for p in q_provs]
+        
+        # Estructura segura de Logs
+        cols = ['bus', 'category', 'km_current', 'km_next', 'date', 'mec_cost', 'com_cost', 'mec_paid', 'com_paid']
+        if not logs:
+            df_logs = pd.DataFrame(columns=cols)
+        else:
+            df_logs = pd.DataFrame(logs)
+            for c in cols:
+                if c not in df_logs.columns: df_logs[c] = 0
+            # Forzado numérico (Corrige Imagen 3)
+            num_cols = ['km_current', 'km_next', 'mec_cost', 'com_cost', 'mec_paid', 'com_paid']
+            for nc in num_cols:
+                df_logs[nc] = pd.to_numeric(df_logs[nc], errors='coerce').fillna(0)
+            df_logs['date'] = pd.to_datetime(df_logs['date'], errors='coerce')
 
-        provs = load_provs()
-        for p in provs:
-            with st.container(border=True):
-                col_a, col_b, col_c = st.columns([2, 2, 1])
-                col_a.write(f"**{p['name']}**")
-                col_a.caption(f"Tipo: {p['type']}")
-                col_b.write(f"📱 {p['phone']}")
-                col_c.markdown(f"[💬 Chat WA](https://wa.me/{p['phone']})")
+        return df_logs, provs
 
-    # --- MÓDULO: TALLER (CONEXIÓN CON DIRECTORIO) ---
+    df, providers = load_safe_data()
+
+    # --- 5. NAVEGACIÓN ---
+    st.sidebar.markdown(f"**Flota:** `{u['fleet']}`\n**Usuario:** {u['name']}")
+    menu = ["🏠 Inicio", "🛠️ Taller", "💰 Contabilidad", "🏢 Directorio"]
+    choice = st.sidebar.radio("Ir a:", menu)
+
+    if choice == "🏠 Inicio":
+        st.subheader(f"Estado Unidad {u['bus']}")
+        if df.empty:
+            st.info("👋 Sin datos. Registra tu primer mantenimiento.")
+        else:
+            st.metric("KM Actual", f"{df['km_current'].max():,.0f}")
+
     elif choice == "🛠️ Taller":
         st.subheader("Registrar Mantenimiento")
-        provs = load_provs()
-        mecs = [p['name'] for p in provs if p['type'] == "Mecánico"]
-        coms = [p['name'] for p in provs if p['type'] == "Comercio"]
+        # Filtrado seguro de proveedores (Corrige Imagen 6)
+        mecs = [p['name'] for p in providers if p.get('type') == "Mecánico"]
+        coms = [p['name'] for p in providers if p.get('type') == "Comercio"]
         
-        with st.form("form_mant"):
+        with st.form("form_mant_fix"):
             cat = st.selectbox("Categoría", ["Aceite", "Frenos", "Llantas", "Motor", "Caja", "Otro"])
             km_a = st.number_input("Kilometraje Actual", min_value=0)
             st.divider()
-            c_m, c_r = st.columns(2)
+            c_m, c_c = st.columns(2)
             m_sel = c_m.selectbox("Mecánico", ["N/A"] + mecs)
             m_val = c_m.number_input("Costo Mano de Obra", min_value=0.0)
-            r_sel = c_r.selectbox("Repuestos (Comercio)", ["N/A"] + coms)
-            r_val = c_r.number_input("Costo Repuestos", min_value=0.0)
+            c_sel = c_c.selectbox("Comercio Repuestos", ["N/A"] + coms)
+            c_val = c_c.number_input("Costo Repuestos", min_value=0.0)
             
-            if st.form_submit_button("GUARDAR REPORTE"):
+            if st.form_submit_button("GUARDAR"):
                 DATA_REF.collection("logs").add({
                     "fleetId": u['fleet'], "bus": u['bus'], "date": datetime.now().isoformat(),
                     "category": cat, "km_current": km_a,
                     "mec_name": m_sel, "mec_cost": m_val, "mec_paid": 0,
-                    "com_name": r_sel, "com_cost": r_val, "com_paid": 0
+                    "com_name": c_sel, "com_cost": c_val, "com_paid": 0
                 })
-                st.success("Reporte guardado con éxito."); time.sleep(1); st.rerun()
+                st.success("✅ Guardado."); time.sleep(1); st.rerun()
 
-    # --- BOTÓN DE SALIDA ---
-    if st.sidebar.button("🚪 Cerrar Sesión Segura"):
+    elif choice == "🏢 Directorio":
+        st.subheader("Directorio de Proveedores")
+        with st.form("new_p"):
+            n = st.text_input("Nombre / Taller")
+            t = st.text_input("WhatsApp (593...)")
+            type_p = st.radio("Tipo", ["Mecánico", "Comercio"])
+            if st.form_submit_button("Registrar"):
+                DATA_REF.collection("providers").add({"name":n, "phone":t, "type":type_p, "fleetId":u['fleet']})
+                st.rerun()
+        for p in providers:
+            st.write(f"**{p.get('type','')}**: {p['name']} - {p['phone']}")
+
+    if st.sidebar.button("Cerrar Sesión"):
         st.query_params.clear()
         del st.session_state.user
         st.rerun()
-
-st.caption("Itaro v33.0 | Gestión Integral de Transporte")
