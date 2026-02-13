@@ -4,43 +4,19 @@ from datetime import datetime
 import firebase_admin
 from firebase_admin import credentials, firestore
 import json
-import base64
-from io import BytesIO
-from PIL import Image
-import requests
-import time
-import streamlit.components.v1 as components
 import urllib.parse
 
-# --- 1. CONFIGURACIÓN ELITE ---
-st.set_page_config(page_title="Itero Titanium Pro v16", layout="wide", page_icon="⚡", initial_sidebar_state="collapsed")
+# --- CONFIGURACIÓN Y ESTILOS ---
+st.set_page_config(page_title="Itero Enterprise", layout="wide")
 
-CAT_COLORS = {
-    "Frenos": "#22c55e", "Caja": "#ef4444", "Motor": "#3b82f6",
-    "Suspensión": "#f59e0b", "Llantas": "#a855f7", "Eléctrico": "#06b6d4",
-    "Carrocería": "#ec4899", "Otro": "#64748b"
-}
+# Función para enviar WhatsApp
+def send_whatsapp(phone, message):
+    # Limpiar el teléfono (solo números)
+    clean_phone = ''.join(filter(str.isdigit, str(phone)))
+    encoded_msg = urllib.parse.quote(message)
+    return f"https://wa.me/{clean_phone}?text={encoded_msg}"
 
-# --- 2. CSS AVANZADO (NEUMORPHISM & GLASSMORPHISM) ---
-st.markdown(f"""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
-    html, body, [class*="st-"] {{ font-family: 'Inter', sans-serif; }}
-    .main-card {{
-        background: white; padding: 20px; border-radius: 20px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.08); border-left: 5px solid #0f172a;
-        margin-bottom: 15px;
-    }}
-    .stMetric {{ background: #ffffff; padding: 15px; border-radius: 15px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }}
-    .top-bar {{
-        background: linear-gradient(90deg, #0f172a 0%, #1e293b 100%);
-        color: white; padding: 1rem 2rem; border-radius: 0 0 20px 20px;
-        margin-bottom: 2rem; display: flex; justify-content: space-between;
-    }}
-    </style>
-    """, unsafe_allow_html=True)
-
-# --- 3. CORE: FIREBASE & DATA ---
+# --- DATABASE CORE ---
 @st.cache_resource
 def init_db():
     if not firebase_admin._apps:
@@ -49,142 +25,113 @@ def init_db():
     return firestore.client()
 
 db = init_db()
-APP_ID = "itero-titanium-v15" # Mantenemos ID para compatibilidad
+APP_ID = "itero-titanium-v15"
+BASE_PATH = db.collection("artifacts").document(APP_ID).collection("public").document("data")
 
-def get_collection(col_name):
-    """Acceso centralizado a subcolecciones con filtrado por flota"""
-    return db.collection("artifacts").document(APP_ID).collection("public").document("data").collection(col_name)
+# --- LÓGICA DE NEGOCIO ---
+def save_master(collection, data):
+    """Guarda Mecánicos o Casas Comerciales"""
+    BASE_PATH.collection(collection).add(data)
+    st.toast(f"✅ {collection.capitalize()} registrado")
 
-def get_fleet_data(col_name, fleet_id, bus_id=None):
-    query = get_collection(col_name).where("fleetId", "==", fleet_id)
-    if bus_id:
-        query = query.where("bus", "==", bus_id)
-    return query.stream()
+def update_record(doc_id, updated_data):
+    """Edición con permiso de dueño"""
+    if st.session_state.user['role'] == 'owner':
+        BASE_PATH.collection("logs").document(doc_id).update(updated_data)
+        st.success("Registro actualizado")
+        st.rerun()
 
-# --- 4. INTELIGENCIA ARTIFICIAL (GEMINI 1.5 FLASH) ---
-def call_itero_ai(data_context):
-    api_key = st.secrets["GEMINI_KEY"]
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-    
-    prompt = f"""Analiza estos datos de mantenimiento de flota: {data_context}.
-    Identifica: 1. El bus más costoso. 2. Repuesto con mayor sobreprecio. 3. Acción correctiva urgente."""
-    
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
-    try:
-        res = requests.post(url, json=payload, timeout=10)
-        return res.json()['candidates'][0]['content']['parts'][0]['text']
-    except Exception as e:
-        return f"Error en Auditoría: {str(e)}"
-
-# --- 5. LÓGICA DE NEGOCIO ---
-def handle_payment(doc_id, amount, field_to_update):
-    """Actualiza abonos de forma atómica"""
-    doc_ref = get_collection("logs").document(doc_id)
-    doc_ref.update({field_to_update: firestore.Increment(amount)})
-    st.toast(f"✅ Pago registrado de ${amount}")
-    time.sleep(1)
-    st.rerun()
-
-# --- 6. INTERFAZ DE USUARIO (DASHBOARD) ---
+# --- INTERFAZ ---
 if 'user' not in st.session_state:
-    # Lógica de Login simplificada (Mantener tu lógica de query_params es buena para persistencia)
-    st.title("🚀 Itero Titanium Pro")
-    with st.container():
-        role = st.selectbox("Tipo de Acceso", ["Conductor", "Administrador/Dueño"])
-        f_id = st.text_input("ID de Flota (Ej: TRANS_NORTE)").upper()
-        u_name = st.text_input("Tu Nombre")
-        u_bus = st.text_input("N° de Bus (Si aplica)")
-        
-        if st.button("ENTRAR AL SISTEMA", use_container_width=True):
-            st.session_state.user = {
-                'role': 'driver' if role == "Conductor" else 'owner',
-                'fleet': f_id, 'name': u_name, 'bus': u_bus
-            }
-            st.rerun()
+    # (Mismo login del paso anterior...)
+    st.title("⚡ Itero Enterprise Login")
+    # ... código de login ...
+    # Asegúrate de capturar 'role', 'fleet', 'bus' y 'name'
 else:
     u = st.session_state.user
-    st.markdown(f"<div class='top-bar'><div><b>FLOTA:</b> {u['fleet']}</div><div><b>USER:</b> {u['name']}</div></div>", unsafe_allow_html=True)
-
-    # --- SIDEBAR MEJORADO ---
+    
     with st.sidebar:
-        st.header("Menú Principal")
-        tabs = ["🏠 Inicio", "🛠️ Reportar", "⛽ Gas", "📋 Historial", "🤖 Auditor IA"]
-        choice = st.radio("Navegar", tabs)
+        st.title(f"🚀 {u['fleet']}")
+        tabs = ["🏠 Dashboard", "📋 Gestión Pagos", "🏢 Proveedores", "⚙️ Admin"]
+        if u['role'] == 'driver':
+            tabs = ["🏠 Mi Unidad", "📋 Mis Cuentas"]
+        choice = st.radio("Menú", tabs)
 
-    # --- VISTA: INICIO ---
-    if choice == "🏠 Inicio":
-        st.subheader("Estado de la Flota")
-        raw_logs = get_fleet_data("logs", u['fleet'])
-        logs_list = [l.to_dict() for l in raw_logs]
+    # --- VISTA: GESTIÓN DE PROVEEDORES (SOLO DUEÑO) ---
+    if choice == "🏢 Proveedores":
+        st.subheader("Maestro de Mecánicos y Casas Comerciales")
+        col1, col2 = st.columns(2)
         
-        if logs_list:
-            df = pd.DataFrame(logs_list)
-            # Normalización rápida
-            df['total_debt'] = (df.get('mec_cost',0) + df.get('sup_cost',0)) - (df.get('mec_paid',0) + df.get('sup_paid',0))
-            
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Gasto Total", f"${df['mec_cost'].sum() + df.get('sup_cost',0).sum():,.2f}")
-            c2.metric("Deuda Pendiente", f"${df['total_debt'].sum():,.2f}", delta="-Acción Requerida", delta_color="inverse")
-            c3.metric("Buses Activos", len(df['bus'].unique()))
-
-            
-            
-            st.divider()
-            st.write("### 🚩 Alertas por Unidad")
-            # Agrupar por bus para ver deudas críticas
-            debt_by_bus = df.groupby('bus')['total_debt'].sum().sort_values(ascending=False)
-            st.bar_chart(debt_by_bus)
-
-    # --- VISTA: HISTORIAL Y PAGOS ---
-    elif choice == "📋 Historial":
-        st.subheader("Gestión de Cuentas y Evidencias")
-        raw_logs = get_fleet_data("logs", u['fleet'], u['bus'] if u['role']=='driver' else None)
+        with col1:
+            with st.expander("➕ Registrar Nuevo"):
+                tipo = st.selectbox("Tipo", ["Mecánico", "Casa Comercial"])
+                p_name = st.text_input("Nombre / Razón Social")
+                p_phone = st.text_input("WhatsApp (Ejem: 57310...)")
+                if st.button("Guardar Proveedor"):
+                    save_master("providers", {"name": p_name, "phone": p_phone, "type": tipo, "fleetId": u['fleet']})
         
-        for doc in raw_logs:
+        # Listado de proveedores
+        prov_ref = BASE_PATH.collection("providers").where("fleetId", "==", u['fleet']).stream()
+        prov_list = [{"id": p.id, **p.to_dict()} for p in prov_ref]
+        if prov_list:
+            st.table(pd.DataFrame(prov_list)[['name', 'type', 'phone']])
+
+    # --- VISTA: GESTIÓN DE PAGOS Y ABONOS ---
+    elif "Cuentas" in choice or "Pagos" in choice:
+        st.subheader("Control de Deudas y Abonos")
+        
+        # Filtro de seguridad: Si es conductor, solo ve su bus
+        query = BASE_PATH.collection("logs").where("fleetId", "==", u['fleet'])
+        if u['role'] == 'driver':
+            query = query.where("bus", "==", u['bus'])
+        
+        logs = query.stream()
+        
+        for doc in logs:
             data = doc.to_dict()
-            with st.container():
-                st.markdown(f"""
-                <div class='main-card'>
-                    <div style='display:flex; justify-content:space-between'>
-                        <b>Bus {data['bus']} - {data['category']}</b>
-                        <span style='color:gray'>{data.get('date')}</span>
-                    </div>
-                    <p>{data['part']}</p>
-                </div>
-                """, unsafe_allow_html=True)
+            doc_id = doc.id
+            
+            # Cálculo de deudas
+            m_debt = data.get('mec_cost', 0) - data.get('mec_paid', 0)
+            s_debt = data.get('sup_cost', 0) - data.get('sup_paid', 0)
+            
+            with st.container(border=True):
+                c1, c2, c3 = st.columns([2, 2, 1])
+                c1.markdown(f"**Bus {data['bus']}** | {data['category']}\n\n*{data['part']}*")
                 
-                exp = st.expander("Detalle de Costos y Pagos")
-                with exp:
-                    col_a, col_b = st.columns(2)
-                    # Lógica de Mecánico
-                    m_debt = data.get('mec_cost',0) - data.get('mec_paid',0)
-                    col_a.write(f"**Mecánico:** {data.get('mec_name')}")
-                    col_a.write(f"Deuda: ${m_debt:,.2f}")
+                # Gestión de Mecánico
+                with c2:
+                    st.write(f"🔧 {data.get('mec_name')}")
+                    st.caption(f"Deuda: ${m_debt:,.0f}")
                     if m_debt > 0 and u['role'] == 'owner':
-                        pay_m = col_a.number_input("Abonar $", key=f"pay_m_{doc.id}", min_value=0.0, max_value=float(m_debt))
-                        if col_a.button("Registrar Pago", key=f"btn_m_{doc.id}"):
-                            handle_payment(doc.id, pay_m, 'mec_paid')
+                        amt = st.number_input("Abono", key=f"amt_m_{doc_id}")
+                        if st.button("Abonar", key=f"btn_m_{doc_id}"):
+                            BASE_PATH.collection("logs").document(doc_id).update({'mec_paid': firestore.Increment(amt)})
+                            st.rerun()
+                
+                # WhatsApp y Edición
+                with c3:
+                    # Botón WhatsApp
+                    tel = data.get('mec_phone', "") # Debería venir del maestro
+                    msg = f"Hola, soy de la flota {u['fleet']}. Sobre el arreglo del bus {data['bus']}..."
+                    st.link_button("💬 WA", send_whatsapp(tel, msg))
                     
-                    # Lógica de Almacén
-                    s_debt = data.get('sup_cost',0) - data.get('sup_paid',0)
-                    col_b.write(f"**Almacén:** {data.get('sup_name')}")
-                    col_b.write(f"Deuda: ${s_debt:,.2f}")
-                    if s_debt > 0 and u['role'] == 'owner':
-                        pay_s = col_b.number_input("Abonar $", key=f"pay_s_{doc.id}", min_value=0.0, max_value=float(s_debt))
-                        if col_b.button("Registrar Pago ", key=f"btn_s_{doc.id}"):
-                            handle_payment(doc.id, pay_s, 'sup_paid')
+                    if u['role'] == 'owner':
+                        if st.button("📝 Editar", key=f"ed_{doc_id}"):
+                            st.session_state.editing = doc_id
 
-    # --- VISTA: AUDITOR IA ---
-    elif choice == "🤖 Auditor IA":
-        st.subheader("Análisis Inteligente Itero")
-        if st.button("EJECUTAR AUDITORÍA COMPLETA"):
-            logs = [l.to_dict() for l in get_fleet_data("logs", u['fleet'])]
-            if logs:
-                with st.spinner("Gemini analizando patrones de gasto..."):
-                    context = str(logs)[:3000] # Limitar tokens
-                    analisis = call_itero_ai(context)
-                    st.markdown(f"> {analisis}")
-            else:
-                st.warning("No hay datos suficientes para analizar.")
+            # Formulario de edición (Solo si el dueño presionó editar)
+            if st.session_state.get('editing') == doc_id:
+                with st.form(f"edit_form_{doc_id}"):
+                    new_cost = st.number_input("Nuevo Costo Mecánico", value=float(data.get('mec_cost', 0)))
+                    new_part = st.text_input("Descripción", value=data.get('part', ""))
+                    if st.form_submit_button("Confirmar Cambios"):
+                        update_record(doc_id, {"mec_cost": new_cost, "part": new_part})
+                        del st.session_state.editing
 
-st.caption(f"Itero V16 Pro | Optimized for Fleet Management")
+    # --- VISTA: DASHBOARD INTELIGENTE ---
+    elif "🏠" in choice:
+        st.subheader("Estado Financiero")
+        # Aquí va el código de gráficas anterior, pero filtrado
+        # Si es conductor, mostrar solo su 'total_debt'
+        # Si es dueño, mostrar el acumulado de todos los buses.
