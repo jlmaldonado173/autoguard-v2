@@ -12,20 +12,20 @@ import time
 import streamlit.components.v1 as components
 import urllib.parse
 
-# --- 1. CONFIGURACIÓN ---
-st.set_page_config(page_title="Itero", layout="wide", page_icon="🔄", initial_sidebar_state="collapsed")
+# --- 1. CONFIGURACIÓN E IDENTIDAD ---
+st.set_page_config(page_title="Itero AI", layout="wide", page_icon="🔄", initial_sidebar_state="collapsed")
 
 CAT_COLORS = {
     "Frenos": "#22c55e", "Caja": "#ef4444", "Motor": "#3b82f6",
     "Suspensión": "#f59e0b", "Llantas": "#a855f7", "Eléctrico": "#06b6d4", "Otro": "#64748b"
 }
 
-# --- 2. ESTILOS CSS APK PREMIUM ---
+# --- 2. ESTILOS APK PREMIUM ---
 st.markdown(f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap');
     html, body, [class*="st-"] {{ font-family: 'Plus Jakarta Sans', sans-serif; }}
-    .stApp {{ background-color: #f8fafc; }}
+    .stApp {{ background-color: #f1f5f9; }}
     
     .top-bar {{
         background: #1e293b; color: white; padding: 15px 20px;
@@ -36,264 +36,254 @@ st.markdown(f"""
     .content-area {{ margin-top: 85px; }}
     
     .bus-card {{
-        background: white; padding: 20px; border-radius: 20px;
+        background: white; padding: 20px; border-radius: 24px;
         border-top: 6px solid #3b82f6; margin-bottom: 15px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+        transition: transform 0.2s;
     }}
+    .bus-card:active {{ transform: scale(0.98); }}
     
-    .status-badge {{ padding: 4px 12px; border-radius: 20px; font-size: 10px; font-weight: bold; text-transform: uppercase; }}
-    .pending {{ background: #fee2e2; color: #ef4444; }}
-    .partial {{ background: #fef3c7; color: #d97706; }}
-    .full {{ background: #dcfce7; color: #16a34a; }}
+    .ai-box {{
+        background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+        color: white; padding: 20px; border-radius: 20px;
+        border-left: 5px solid #3b82f6; margin: 15px 0;
+    }}
     
     .stButton>button {{
-        border-radius: 16px; height: 3.5rem; font-weight: 700;
+        border-radius: 16px; height: 3.8rem; font-weight: 700;
         text-transform: uppercase; transition: all 0.3s;
     }}
-    .whatsapp-btn {{
-        background-color: #25d366 !important;
-        color: white !important;
-        border: none !important;
+    
+    .wa-button {{
+        background-color: #25d366 !important; color: white !important;
+        font-weight: 800 !important; border-radius: 12px !important;
+        text-decoration: none; display: flex; align-items: center; justify-content: center;
+        padding: 12px; margin-top: 10px; border: 1px solid #128c7e;
     }}
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. FUNCIONES DE APOYO ---
+# --- 3. FUNCIONES TÉCNICAS (IMAGEN, WHATSAPP E IA) ---
 def process_img(file):
     if file is None: return None
     try:
         img = Image.open(file)
-        img.thumbnail((600, 600))
+        img.thumbnail((500, 500))
         buf = BytesIO()
         img.save(buf, format="JPEG", quality=75)
         return base64.b64encode(buf.getvalue()).decode()
     except: return None
 
-def save_session_js(data):
-    components.html(f"<script>window.localStorage.setItem('itero_session_v61', '{json.dumps(data)}');</script>", height=0)
+def clean_phone(phone):
+    clean = "".join(filter(str.isdigit, str(phone)))
+    if len(clean) == 10 and clean.startswith("0"): return "593" + clean[1:]
+    return clean if len(clean) > 8 else ""
 
-def clear_session_js():
-    components.html("<script>window.localStorage.removeItem('itero_session_v61'); window.parent.location.search = '';</script>", height=0)
+def call_gemini_ai(prompt):
+    """Llamada a Gemini 2.5 Flash con Exponential Backoff"""
+    api_key = "" # El entorno inyecta la clave automáticamente
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key={api_key}"
+    
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "systemInstruction": {"parts": [{"text": "Eres un experto mecánico y auditor de flotas de buses en Ecuador. Analiza los gastos y da consejos cortos y claros de ahorro."}]}
+    }
+    
+    for i in range(5):
+        try:
+            response = requests.post(url, json=payload)
+            if response.status_code == 200:
+                result = response.json()
+                return result['candidates'][0]['content']['parts'][0]['text']
+        except:
+            time.sleep(2**i)
+    return "No pude analizar los datos en este momento. Inténtalo de nuevo."
 
 # --- 4. FIREBASE ---
 @st.cache_resource
 def init_firebase():
     if not firebase_admin._apps:
         try:
-            cred = credentials.Certificate(json.loads(st.secrets["FIREBASE_JSON"]))
+            if "FIREBASE_JSON" in st.secrets:
+                cred = credentials.Certificate(json.loads(st.secrets["FIREBASE_JSON"]))
+            else:
+                cred = credentials.Certificate("firebase_key.json")
             firebase_admin.initialize_app(cred)
         except: return None
     return firestore.client()
 
 db = init_firebase()
-app_id = "auto-guard-v2-prod"
+app_id = "itero-v8-prod" # Usamos un ID limpio para esta versión
 
 def get_ref(col):
     return db.collection("artifacts").document(app_id).collection("public").document("data").collection(col)
 
-# --- 5. LÓGICA DE SESIÓN ---
-u = st.session_state.get('user', None)
-if u is None and "session" in st.query_params:
-    try:
-        u = json.loads(st.query_params["session"])
-        st.session_state.user = u
-    except: pass
+# --- 5. SESIÓN Y NAVEGACIÓN ---
+if 'user' not in st.session_state: st.session_state.user = None
+if 'page' not in st.session_state: st.session_state.page = "🏠 Inicio"
+if 'selected_bus' not in st.session_state: st.session_state.selected_bus = None
 
-# --- 6. PANTALLA DE ACCESO ---
-if u is None:
-    st.markdown("<br><br><h1 style='text-align:center; color:#1e293b;'>Itero</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align:center;'>Gestión Inteligente de Flotas</p>", unsafe_allow_html=True)
-    
+# --- 6. ACCESO (LOGIN) ---
+if st.session_state.user is None:
+    st.markdown("<br><br><h1 style='text-align:center; color:#1e293b;'>🛡️ Itero AI V8.0</h1>", unsafe_allow_html=True)
     t1, t2 = st.tabs(["👨‍✈️ Conductores", "🛡️ Administración"])
     with t1:
-        with st.form("login_driver"):
+        with st.form("l_d"):
             f_id = st.text_input("Código de Flota")
             u_n = st.text_input("Nombre")
-            u_b = st.text_input("N° Unidad (Bus)")
-            if st.form_submit_button("Entrar"):
-                user = {'role':'driver', 'fleet':f_id.upper().strip(), 'name':u_n, 'bus':u_b}
-                st.session_state.user = user
-                save_session_js(user); st.rerun()
+            u_b = st.text_input("N° Bus")
+            if st.form_submit_button("Ingresar"):
+                st.session_state.user = {'role':'driver', 'fleet':f_id.upper(), 'name':u_n, 'bus':u_b}; st.rerun()
     with t2:
-        with st.form("login_owner"):
+        with st.form("l_o"):
             f_o = st.text_input("Código de Flota")
-            o_n = st.text_input("Nombre Dueño")
+            o_n = st.text_input("Dueño")
             if st.form_submit_button("Acceso Total"):
-                user = {'role':'owner', 'fleet':f_o.upper().strip(), 'name':o_n}
-                st.session_state.user = user
-                save_session_js(user); st.rerun()
+                st.session_state.user = {'role':'owner', 'fleet':f_o.upper(), 'name':o_n}; st.rerun()
 
 # --- 7. APP PRINCIPAL ---
 else:
-    # Barra Superior
-    st.markdown(f"<div class='top-bar'><span>🛡️ Itero</span><span>👤 {u['name']}</span></div><div class='content-area'></div>", unsafe_allow_html=True)
+    u = st.session_state.user
+    st.markdown(f"<div class='top-bar'><span>🛡️ Itero AI</span><span>👤 {u['name']}</span></div><div class='content-area'></div>", unsafe_allow_html=True)
 
     with st.sidebar:
         st.title("Itero Pro")
-        menu = ["🏠 Dashboard", "🛠️ Reportar Arreglo", "📋 Historial por Bus", "👨‍🔧 Deudas Mecánicos", "🏢 Casas Comerciales", "📦 Repuestos"]
-        if u['role'] == 'driver': menu = ["🏠 Dashboard", "🛠️ Reportar Arreglo", "📋 Mis Reportes"]
+        menu = ["🏠 Inicio", "🛠️ Reportar Arreglo", "📋 Historial por Bus", "👨‍🔧 Cuentas Mecánicos"]
+        if u['role'] == 'driver': menu = ["🏠 Inicio", "🛠️ Reportar Arreglo", "📋 Mis Reportes"]
         
-        page = st.radio("Menú", menu, index=0)
+        sel = st.radio("Ir a:", menu, index=menu.index(st.session_state.page) if st.session_state.page in menu else 0)
+        if sel != st.session_state.page:
+            st.session_state.page = sel; st.session_state.selected_bus = None; st.rerun()
+        
         st.divider()
-        if st.button("🚪 Cerrar Sesión", use_container_width=True):
-            clear_session_js(); st.session_state.user = None; st.rerun()
+        if st.button("Cerrar Sesión"):
+            st.session_state.user = None; st.rerun()
 
-    # --- DASHBOARD ---
-    if page == "🏠 Dashboard":
-        st.header("📊 Finanzas de la Flota")
-        logs_raw = [l.to_dict() for l in get_ref("maintenance_logs").stream() if l.to_dict().get('fleetId') == u['fleet']]
+    # --- PÁGINA: INICIO (DASHBOARD) ---
+    if st.session_state.page == "🏠 Inicio":
+        logs = [l.to_dict() for l in get_ref("maintenance_logs").stream() if l.to_dict().get('fleetId') == u['fleet']]
         
-        if logs_raw:
-            df = pd.DataFrame(logs_raw)
-            for c in ['cost', 'abono', 'busNumber', 'mechanic']:
-                if c not in df.columns: df[c] = 0.0 if c in ['cost', 'abono'] else "S/N"
-            df['deuda'] = df['cost'] - df['abono']
-
-            if u['role'] == 'driver':
-                df = df[df['busNumber'] == u['bus']]
-                st.subheader(f"Estado de Unidad: {u['bus']}")
+        if st.session_state.selected_bus:
+            # --- VISTA DETALLADA DEL BUS (LA PESTAÑA QUE PEDISTE) ---
+            bus_id = st.session_state.selected_bus
+            st.header(f"🚛 Expediente Unidad {bus_id}")
+            if st.button("⬅️ VOLVER AL LISTADO"): st.session_state.selected_bus = None; st.rerun()
+            
+            df_bus = pd.DataFrame([l for l in logs if l.get('busNumber') == bus_id])
+            if not df_bus.empty:
                 c1, c2 = st.columns(2)
-                c1.metric("Inversión", f"${df['cost'].sum():,.2f}")
-                c2.metric("Abonado", f"${df['abono'].sum():,.2f}")
+                c1.metric("Inversión en este Bus", f"${df_bus['cost'].sum():,.2f}")
+                c2.metric("Reportes", len(df_bus))
+                
+                # --- BOTÓN DE IA ---
+                st.markdown("<div class='ai-box'>", unsafe_allow_html=True)
+                st.subheader("🧠 Auditoría con IA")
+                if st.button("🤖 ANALIZAR ESTADO DEL BUS"):
+                    resumen_data = df_bus[['category', 'part_name', 'cost', 'date']].to_string()
+                    prompt = f"Analiza estos gastos del bus {bus_id}: {resumen_data}. ¿Qué recomendaciones me das para ahorrar dinero?"
+                    with st.spinner("La IA está revisando los arreglos..."):
+                        analisis = call_gemini_ai(prompt)
+                        st.markdown(f"**Análisis de Itero AI:**\n\n{analisis}")
+                st.markdown("</div>", unsafe_allow_html=True)
+                
+                st.write("### Últimos trabajos de esta unidad")
+                st.table(df_bus[['date', 'category', 'part_name', 'cost']].sort_index(ascending=False).head(10))
             else:
-                st.subheader("🚛 Unidades Registradas")
-                buses = sorted(df['busNumber'].unique())
-                cols = st.columns(3)
-                for i, bus in enumerate(buses):
-                    bus_df = df[df['busNumber'] == bus]
-                    with cols[i % 3]:
-                        st.markdown(f"""
-                        <div class='bus-card'>
-                            <h3 style='margin:0'>Bus {bus}</h3>
-                            <p style='margin:5px 0'>Total: <b>${bus_df['cost'].sum():,.2f}</b></p>
-                            <p style='margin:0; color:#ef4444'>Deuda: <b>${bus_df['deuda'].sum():,.2f}</b></p>
-                        </div>
-                        """, unsafe_allow_html=True)
+                st.warning("Este bus no tiene registros aún.")
+        
+        else:
+            # --- VISTA GENERAL ---
+            st.header("📊 Resumen de tu Flota")
+            if logs:
+                df = pd.DataFrame(logs)
+                for c in ['cost', 'abono', 'busNumber', 'mechanic']:
+                    if c not in df.columns: df[c] = 0.0 if c in ['cost', 'abono'] else "S/N"
+                df['deuda'] = df['cost'] - df['abono']
+                
+                if u['role'] == 'driver': df = df[df['busNumber'] == u['bus']]
+                
+                c1, c2 = st.columns(2)
+                c1.metric("Inversión Flota", f"${df['cost'].sum():,.2f}")
+                c2.metric("Pendiente de Pago", f"${df['deuda'].sum():,.2f}", delta_color="inverse")
                 
                 st.divider()
-                st.subheader("👨‍🔧 Deudas con Mecánicos")
-                res_mec = df.groupby('mechanic')['deuda'].sum().reset_index()
-                for _, row in res_mec.iterrows():
-                    if row['deuda'] > 0:
-                        st.warning(f"Se debe `${row['deuda']:,.2f}` a **{row['mechanic']}**")
-        else:
-            st.info("Sin registros.")
+                st.subheader("🚛 Pulsa una Unidad para ver detalle e IA")
+                buses = sorted(df['busNumber'].unique())
+                cols = st.columns(2)
+                for i, bus in enumerate(buses):
+                    bus_df = df[df['busNumber'] == bus]
+                    with cols[i % 2]:
+                        st.markdown(f"""
+                        <div class='bus-card'>
+                            <h3 style='margin:0'>BUS {bus}</h3>
+                            <p style='margin:10px 0; color:#64748b;'>Gasto: <b>${bus_df['cost'].sum():,.2f}</b></p>
+                            <p style='margin:0; color:#ef4444;'>Deuda: <b>${(bus_df['cost'] - bus_df['abono']).sum():,.2f}</b></p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        if st.button(f"🔎 VER UNIDAD {bus}", key=f"btn_bus_{bus}"):
+                            st.session_state.selected_bus = bus
+                            st.rerun()
+            else:
+                st.info("👋 Registra tu primer bus para empezar.")
 
-    # --- REPORTAR ---
-    elif page == "🛠️ Reportar Arreglo":
-        st.subheader(f"🛠️ Registro Unidad {u.get('bus', 'ADMIN')}")
+    # --- PÁGINA: REPORTAR ARREGLO ---
+    elif st.session_state.page == "🛠️ Reportar Arreglo":
+        st.subheader(f"🛠️ Nuevo Reporte - Unidad {u.get('bus', 'ADMIN')}")
         mecs = [m.to_dict()['name'] for m in get_ref("mechanics").stream() if m.to_dict().get('fleetId') == u['fleet']]
-        casas = [c.to_dict()['name'] for c in get_ref("suppliers").stream() if c.to_dict().get('fleetId') == u['fleet']]
-
-        with st.form("f_itero"):
-            target_bus = u.get('bus', 'ADMIN')
-            if u['role'] == 'owner': target_bus = st.text_input("Número de Bus")
+        
+        with st.form("f_reporte"):
+            bus_target = u.get('bus', 'ADMIN')
+            if u['role'] == 'owner': bus_target = st.text_input("N° de Bus")
             
-            cat = st.selectbox("Sección", list(CAT_COLORS.keys()))
-            p_name = st.text_input("¿Qué se arregló/compró?")
+            cat = st.selectbox("Categoría", list(CAT_COLORS.keys()))
+            trabajo = st.text_input("¿Qué pieza se arregló?")
+            col1, col2 = st.columns(2)
+            total = col1.number_input("Costo Total $", min_value=0.0)
+            abono = col2.number_input("Abono hoy $", min_value=0.0)
             
-            c1, c2 = st.columns(2)
-            c_total = c1.number_input("Costo TOTAL $", min_value=0.0)
-            c_abono = c2.number_input("Abono entregado $", min_value=0.0)
-            
-            foto = st.camera_input("📸 Evidencia Fotográfica")
             m_sel = st.selectbox("Mecánico", ["Externo"] + mecs)
-            c_sel = st.selectbox("Casa Comercial", ["Otro"] + casas)
-            notas = st.text_area("Notas")
-
-            if st.form_submit_button("🚀 GUARDAR REPORTE"):
-                if c_total > 0 and target_bus != "":
-                    img_b64 = process_img(foto)
-                    get_ref("maintenance_logs").add({
-                        'fleetId': u['fleet'], 'busNumber': target_bus,
-                        'category': cat, 'part_name': p_name, 'description': notas,
-                        'cost': c_total, 'abono': c_abono,
-                        'mechanic': m_sel, 'supplier': c_sel, 'image': img_b64,
-                        'date': datetime.now().strftime("%d/%m/%Y"), 'createdAt': datetime.now()
-                    })
-                    st.success(f"Guardado. Deuda pendiente: ${c_total - c_abono:,.2f}")
-                    time.sleep(1); st.rerun()
-
-    # --- HISTORIAL CON WHATSAPP ---
-    elif "Historial" in page or "Reportes" in page:
-        st.header("📋 Bitácora de Movimientos")
-        
-        # Obtener mecánicos para sacar sus teléfonos
-        all_mecs = {m.to_dict()['name']: m.to_dict().get('phone', '') for m in get_ref("mechanics").stream() if m.to_dict().get('fleetId') == u['fleet']}
-        
-        logs = [{"id": l.id, **l.to_dict()} for l in get_ref("maintenance_logs").stream() if l.to_dict().get('fleetId') == u['fleet']]
-        
-        if u['role'] == 'owner':
-            bus_sel = st.selectbox("Filtrar Bus:", ["TODOS"] + sorted(list(set([l['busNumber'] for l in logs]))))
-            if bus_sel != "TODOS": logs = [l for l in logs if l['busNumber'] == bus_sel]
-        else:
-            logs = [l for l in logs if l['busNumber'] == u['bus']]
-
-        for l in sorted(logs, key=lambda x: x.get('createdAt', datetime.now()), reverse=True):
-            cost = l.get('cost', 0); abono = l.get('abono', 0); deuda = cost - abono
-            color = CAT_COLORS.get(l.get('category'), "#64748b")
-            status = "full" if deuda <= 0 else ("partial" if abono > 0 else "pending")
-            status_txt = "PAGADO" if deuda <= 0 else ("CON ABONO" if abono > 0 else "EN DEUDA")
-
-            st.markdown(f"""
-            <div class='bus-card' style='border-left: 8px solid {color}; border-top:none;'>
-                <div style='display:flex; justify-content:space-between'>
-                    <span style='background:{color}; color:white; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:bold;'>{l.get('category')}</span>
-                    <span class='status-badge {status}'>{status_txt}</span>
-                </div>
-                <h4 style='margin:10px 0;'>Unidad {l.get('busNumber')} - {l.get('part_name')}</h4>
-                <div style='display:flex; justify-content:space-between; font-size:0.9rem'>
-                    <span>Total: <b>${cost:,.2f}</b></span>
-                    <span>Abonado: <b style='color:#22c55e;'>${abono:,.2f}</b></span>
-                    <span style='color:#ef4444'><b>Debe: ${deuda:,.2f}</b></span>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            foto = st.camera_input("📸 Foto del Arreglo")
             
-            with st.expander("Ver Detalles / Notificar"):
-                if l.get('image'): st.image(base64.b64decode(l['image']), use_container_width=True)
-                st.write(f"🔧 Mecánico: {l.get('mechanic')} | 🏢 Tienda: {l.get('supplier')}")
-                
-                # --- SISTEMA DE WHATSAPP ---
-                if u['role'] == 'owner':
-                    n_pago = st.number_input(f"Añadir nuevo abono", min_value=0.0, max_value=float(deuda), key=f"pay_{l['id']}")
-                    
-                    col_pay, col_wa = st.columns(2)
-                    if col_pay.button("Confirmar Abono", key=f"btn_{l['id']}"):
-                        get_ref("maintenance_logs").document(l['id']).update({'abono': abono + n_pago})
-                        st.success("¡Abono registrado!")
-                        st.rerun()
-                    
-                    # Botón de WhatsApp
-                    tel_mec = all_mecs.get(l.get('mechanic'), "")
-                    if tel_mec:
-                        # Limpiar teléfono (solo números)
-                        tel_clean = "".join(filter(str.isdigit, tel_mec))
-                        # Si no tiene código de país, asumimos Ecuador (+593)
-                        if len(tel_clean) == 10 and tel_clean.startswith("0"):
-                            tel_clean = "593" + tel_clean[1:]
-                        elif len(tel_clean) == 9:
-                            tel_clean = "593" + tel_clean
-                            
-                        msg = f"Hola {l.get('mechanic')}, se ha registrado un abono de ${n_pago if n_pago > 0 else abono:,.2f} por el trabajo de {l.get('part_name')} en el Bus {l.get('busNumber')}. Saldo pendiente: ${deuda - n_pago:,.2f}. Gracias."
-                        encoded_msg = urllib.parse.quote(msg)
-                        wa_url = f"https://wa.me/{tel_clean}?text={encoded_msg}"
-                        
-                        col_wa.link_button("📱 Notificar por WhatsApp", wa_url, use_container_width=True)
-                    else:
-                        col_wa.warning("Mecánico sin teléfono guardado.")
+            if st.form_submit_button("🚀 GUARDAR REPORTE"):
+                if total > 0:
+                    img_data = process_img(foto)
+                    get_ref("maintenance_logs").add({
+                        'fleetId': u['fleet'], 'busNumber': bus_target, 'category': cat,
+                        'part_name': trabajo, 'cost': total, 'abono': abono,
+                        'mechanic': m_sel, 'image': img_data, 'createdAt': datetime.now(),
+                        'date': datetime.now().strftime("%d/%m/%Y")
+                    })
+                    st.success("✅ ¡Reporte guardado con éxito!"); time.sleep(1); st.session_state.page = "🏠 Inicio"; st.rerun()
 
-    # --- MECÁNICOS ---
-    elif "Deudas Mecánicos" in page:
-        st.header("👨‍🔧 Cuentas por Mecánico")
-        r_logs = [l.to_dict() for l in get_ref("maintenance_logs").stream() if l.to_dict().get('fleetId') == u['fleet']]
-        if r_logs:
-            df_m = pd.DataFrame(r_logs)
-            df_m['deuda'] = df_m['cost'] - df_m['abono']
-            m_sel = st.selectbox("Selecciona mecánico:", df_m['mechanic'].unique())
-            res = df_m[df_m['mechanic'] == m_sel]
-            st.metric(f"Saldo total con {m_sel}", f"${res['deuda'].sum():,.2f}")
-            st.table(res[res['deuda'] > 0][['busNumber', 'part_name', 'deuda']].rename(columns={'busNumber':'Bus', 'part_name':'Trabajo', 'deuda':'Saldo'}))
+    # --- PÁGINA: CUENTAS MECÁNICOS ---
+    elif st.session_state.page == "👨‍🔧 Cuentas Mecánicos":
+        st.header("👨‍🔧 Pagos y WhatsApp")
+        logs = [{"id": l.id, **l.to_dict()} for l in get_ref("maintenance_logs").stream() if l.to_dict().get('fleetId') == u['fleet']]
+        mecs_data = {m.to_dict()['name']: m.to_dict().get('phone', '') for m in get_ref("mechanics").stream() if m.to_dict().get('fleetId') == u['fleet']}
+        
+        if logs:
+            df = pd.DataFrame(logs)
+            df['deuda'] = df['cost'] - df['abono']
+            mec_sel = st.selectbox("Mecánico:", ["TODOS"] + sorted(list(df['mechanic'].unique())))
+            
+            if mec_sel != "TODOS":
+                logs_mec = [l for l in logs if l.get('mechanic') == mec_sel and (l.get('cost',0) - l.get('abono',0)) > 0]
+                for d in logs_mec:
+                    deuda_r = d['cost'] - d['abono']
+                    st.markdown(f"<div class='bus-card'><b>Bus {d['busNumber']}</b>: {d['part_name']}<br>Saldo: <b style='color:#ef4444'>${deuda_r:,.2f}</b></div>", unsafe_allow_html=True)
+                    
+                    c1, c2 = st.columns([2, 1])
+                    m_pago = c1.number_input(f"Pagar a {d['part_name']}", min_value=0.0, max_value=float(deuda_r), key=f"p_{d['id']}")
+                    if c1.button("Confirmar Pago", key=f"b_{d['id']}"):
+                        get_ref("maintenance_logs").document(d['id']).update({'abono': d['abono'] + m_pago}); st.rerun()
+                    
+                    tel = mecs_data.get(mec_sel, "")
+                    if tel:
+                        tel_wa = clean_phone(tel)
+                        msg = f"✅ *PAGO REGISTRADO*\n\nHola {mec_sel}, abono de *${m_pago:,.2f}* por el Bus {d['busNumber']}. Saldo: *${deuda_r - m_pago:,.2f}*."
+                        link_wa = f"https://wa.me/{tel_wa}?text={urllib.parse.quote(msg)}"
+                        c2.markdown(f"<a href='{link_wa}' target='_blank' class='wa-button'>📱 WHATSAPP</a>", unsafe_allow_html=True)
+        else: st.info("Sin registros.")
 
-st.caption(f"Itero V6.1 | Notificaciones WhatsApp Activas | Gestión Profesional | ID: {app_id}")
+st.caption(f"Itero AI V8.0 | Inteligencia Artificial Activa | ID: {app_id}")
 
