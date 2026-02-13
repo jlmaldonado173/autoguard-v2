@@ -12,25 +12,18 @@ import urllib.parse
 # --- 1. CONFIGURACIÓN E IDENTIDAD ---
 st.set_page_config(page_title="Itero Pro", layout="wide", page_icon="🔄", initial_sidebar_state="collapsed")
 
-# Semáforo de Colores (Pedido por Jose)
 CAT_COLORS = {
-    "Frenos": "#22c55e",       # Verde
-    "Caja": "#ef4444",         # Rojo
-    "Motor": "#3b82f6",        # Azul
-    "Suspensión": "#f59e0b",   # Amarillo
-    "Llantas": "#a855f7",      # Púrpura
-    "Eléctrico": "#06b6d4",    # Cian
-    "Carrocería": "#ec4899",   # Rosado
-    "Otro": "#64748b"          # Gris
+    "Frenos": "#22c55e", "Caja": "#ef4444", "Motor": "#3b82f6",
+    "Suspensión": "#f59e0b", "Llantas": "#a855f7", "Eléctrico": "#06b6d4",
+    "Carrocería": "#ec4899", "Otro": "#64748b"
 }
 
-# --- 2. DISEÑO CSS APK (COLORES Y TARJETAS) ---
+# --- 2. DISEÑO CSS APK ---
 st.markdown(f"""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap');
     html, body, [class*="st-"] {{ font-family: 'Plus Jakarta Sans', sans-serif; }}
     .stApp {{ background-color: #f8fafc; }}
-    
     .top-bar {{
         background: #1e293b; color: white; padding: 12px 20px;
         position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
@@ -38,13 +31,11 @@ st.markdown(f"""
         box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }}
     .main-content {{ margin-top: 85px; }}
-    
     .bus-card {{
         background: white; padding: 20px; border-radius: 24px;
         border: 1px solid #e2e8f0; margin-bottom: 15px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.02);
     }}
-    
     .stButton>button {{
         border-radius: 16px; height: 3.5rem; font-weight: 700;
         text-transform: uppercase; width: 100%; transition: all 0.3s;
@@ -53,7 +44,6 @@ st.markdown(f"""
     """, unsafe_allow_html=True)
 
 # --- 3. FUNCIONES DE APOYO ---
-
 def show_logo(width=150, centered=True):
     if centered:
         col1, col2, col3 = st.columns([1, 2, 1])
@@ -67,7 +57,7 @@ def show_logo(width=150, centered=True):
 def session_persistence():
     components.html("""
         <script>
-        const stored = window.localStorage.getItem('itero_v14_session');
+        const stored = window.localStorage.getItem('itero_v15_session');
         const urlParams = new URLSearchParams(window.parent.location.search);
         if (stored && !urlParams.has('session')) {
             const currentUrl = window.parent.location.origin + window.parent.location.pathname;
@@ -90,7 +80,7 @@ def init_db():
     return firestore.client()
 
 db = init_db()
-app_id = "itero-v14-main"
+app_id = "itero-v15-secure"
 
 def get_ref(col):
     return db.collection("artifacts").document(app_id).collection("public").document("data").collection(col)
@@ -106,39 +96,66 @@ if 'user' not in st.session_state:
 
 if 'page' not in st.session_state: st.session_state.page = "🏠 Inicio"
 
-# --- 6. INTERFAZ DE INGRESO ---
+# --- 6. INTERFAZ DE INGRESO CON VALIDACIÓN ---
 if st.session_state.user is None:
     show_logo()
-    st.markdown("<h2 style='text-align:center;'>Centro de Control</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align:center;'>Seguridad de Flota</h2>", unsafe_allow_html=True)
     
     t1, t2 = st.tabs(["👨‍✈️ Conductor", "🛡️ Dueño"])
+    
     with t1:
-        with st.form("l_d"):
-            f_id = st.text_input("Código de Flota")
-            u_n = st.text_input("Nombre")
-            u_b = st.text_input("N° Bus")
+        with st.form("l_driver_secure"):
+            f_id = st.text_input("Código de Flota").upper().strip()
+            u_n = st.text_input("Tu Nombre")
+            u_b = st.text_input("N° de Bus")
             if st.form_submit_button("Ingresar"):
                 if f_id:
-                    user = {'role':'driver', 'fleet':f_id.upper().strip(), 'name':u_n, 'bus':u_b}
-                    st.session_state.user = user
-                    js = json.dumps(user)
-                    components.html(f"<script>window.localStorage.setItem('itero_v14_session', '{js}'); window.parent.location.search = '?session=' + encodeURIComponent('{js}');</script>", height=0)
-                    st.rerun()
-                else: st.error("Falta código de flota")
-    with t2:
-        with st.form("l_o"):
-            f_o = st.text_input("Código de Flota")
-            o_n = st.text_input("Nombre Dueño")
-            if st.form_submit_button("Acceso Total"):
-                if f_o:
-                    user = {'role':'owner', 'fleet':f_o.upper().strip(), 'name':o_n}
-                    st.session_state.user = user
-                    js = json.dumps(user)
-                    components.html(f"<script>window.localStorage.setItem('itero_v14_session', '{js}'); window.parent.location.search = '?session=' + encodeURIComponent('{js}');</script>", height=0)
-                    st.rerun()
-                else: st.error("Falta código de flota")
+                    # VALIDACIÓN: ¿Existe la flota?
+                    fleet_ref = get_ref("fleets").document(f_id).get()
+                    if fleet_ref.exists:
+                        user = {'role':'driver', 'fleet':f_id, 'name':u_n, 'bus':u_b}
+                        st.session_state.user = user
+                        js = json.dumps(user)
+                        components.html(f"<script>window.localStorage.setItem('itero_v15_session', '{js}'); window.parent.location.search = '?session=' + encodeURIComponent('{js}');</script>", height=0)
+                        st.rerun()
+                    else:
+                        st.error("❌ El Código de Flota no existe. Pídele el código correcto a tu jefe.")
+                else: st.error("Ingresa el código")
 
-# --- 7. APP PRINCIPAL (INTERCOMUNICACIÓN) ---
+    with t2:
+        with st.form("l_owner_secure"):
+            f_o = st.text_input("Código de Flota (Crea uno o usa el tuyo)").upper().strip()
+            o_n = st.text_input("Nombre del Dueño")
+            if st.form_submit_button("Gestionar Flota"):
+                if f_o and o_n:
+                    # VALIDACIÓN DE DUEÑO
+                    fleet_ref = get_ref("fleets").document(f_o).get()
+                    if fleet_ref.exists:
+                        data = fleet_ref.to_dict()
+                        if data.get('owner_name') == o_n:
+                            # Login exitoso
+                            user = {'role':'owner', 'fleet':f_o, 'name':o_n}
+                            st.session_state.user = user
+                            js = json.dumps(user)
+                            components.html(f"<script>window.localStorage.setItem('itero_v15_session', '{js}'); window.parent.location.search = '?session=' + encodeURIComponent('{js}');</script>", height=0)
+                            st.rerun()
+                        else:
+                            st.error(f"⚠️ El código {f_o} ya pertenece a otro dueño. Usa otro código o verifica tu nombre.")
+                    else:
+                        # REGISTRO DE NUEVA FLOTA
+                        get_ref("fleets").document(f_o).set({
+                            'owner_name': o_n,
+                            'createdAt': datetime.now()
+                        })
+                        user = {'role':'owner', 'fleet':f_o, 'name':o_n}
+                        st.session_state.user = user
+                        js = json.dumps(user)
+                        components.html(f"<script>window.localStorage.setItem('itero_v15_session', '{js}'); window.parent.location.search = '?session=' + encodeURIComponent('{js}');</script>", height=0)
+                        st.success(f"✅ Flota {f_o} registrada a nombre de {o_n}")
+                        time.sleep(1); st.rerun()
+                else: st.error("Completa todos los campos")
+
+# --- 7. APP PRINCIPAL ---
 else:
     u = st.session_state.user
     st.markdown(f"<div class='top-bar'><span>🛡️ {u['fleet']}</span><span>👤 {u['name']}</span></div><div class='main-content'></div>", unsafe_allow_html=True)
@@ -156,91 +173,39 @@ else:
         st.divider()
         if st.button("Cerrar Sesión"):
             st.session_state.user = None
-            components.html("<script>window.localStorage.removeItem('itero_v14_session'); window.parent.location.search = '';</script>", height=0)
+            components.html("<script>window.localStorage.removeItem('itero_v15_session'); window.parent.location.search = '';</script>", height=0)
             st.rerun()
 
-    # --- PÁGINA: INICIO (DASHBOARD) ---
+    # --- CONTENIDO ---
     if st.session_state.page == "🏠 Inicio":
-        st.header(f"📊 Dashboard Flota {u['fleet']}")
-        
-        # Intercomunicación: Traer datos de la flota
+        st.header(f"📊 Dashboard {u['fleet']}")
         logs = [l.to_dict() for l in get_ref("logs").stream() if l.to_dict().get('fleetId') == u['fleet']]
-        
         if logs:
             df = pd.DataFrame(logs)
-            df['deuda'] = df.get('cost', 0) - df.get('abono', 0)
-            
-            c1, c2 = st.columns(2)
-            c1.metric("Inversión Flota", f"${df['cost'].sum():,.2f}")
-            c2.metric("Pendiente de Pago", f"${df['deuda'].sum():,.2f}", delta_color="inverse")
-            
-            st.subheader("Estado por Unidades")
-            buses = sorted(df['busNumber'].unique())
-            cols = st.columns(2)
-            for i, b in enumerate(buses):
-                b_df = df[df['busNumber'] == b]
-                with cols[i % 2]:
-                    st.markdown(f"<div class='bus-card'><h4>BUS {b}</h4><p>Total: ${b_df['cost'].sum():,.2f}</p></div>", unsafe_allow_html=True)
-        else:
-            st.info("Aún no hay datos reportados en esta flota.")
+            st.metric("Inversión Total", f"${df['cost'].sum():,.2f}")
+        else: st.info("Aún no hay reportes.")
 
-    # --- PÁGINA: REPORTAR ARREGLO ---
     elif st.session_state.page == "🛠️ Reportar Arreglo":
-        st.header("🛠️ Nuevo Registro")
-        with st.form("f_reporte", clear_on_submit=True):
+        st.header("🛠️ Nuevo Reporte")
+        with st.form("f_rep", clear_on_submit=True):
             bus_num = u.get('bus', "")
-            if u['role'] == 'owner': bus_num = st.text_input("Número de Bus")
-            
-            cat = st.selectbox("Sección (Semáforo)", list(CAT_COLORS.keys()))
-            trabajo = st.text_input("¿Qué se arregló? (Ej: Rodillos)")
-            falla = st.text_input("Falla encontrada (Ej: Sin frenos)")
-            
-            c1, c2 = st.columns(2)
-            costo = c1.number_input("Costo Total $", min_value=0.0)
-            abono = c2.number_input("Abono hoy $", min_value=0.0)
-            
-            foto = st.camera_input("📸 Evidencia")
-            
-            if st.form_submit_button("🚀 GUARDAR REPORTE"):
-                if costo > 0 and bus_num != "":
-                    # Guardado con intercomunicación
-                    get_ref("logs").add({
-                        'fleetId': u['fleet'],
-                        'busNumber': bus_num,
-                        'category': cat,
-                        'part': trabajo,
-                        'fault': falla,
-                        'cost': costo,
-                        'abono': abono,
-                        'date': datetime.now().strftime("%d/%m/%Y"),
-                        'createdAt': datetime.now()
-                    })
-                    st.success("✅ ¡Guardado!"); time.sleep(1); st.session_state.page = "🏠 Inicio"; st.rerun()
-                else: st.error("Completa los datos")
+            if u['role'] == 'owner': bus_num = st.text_input("Bus")
+            cat = st.selectbox("Sección", list(CAT_COLORS.keys()))
+            trabajo = st.text_input("¿Qué se arregló?")
+            costo = st.number_input("Costo $", min_value=0.0)
+            abono = st.number_input("Abono $", min_value=0.0)
+            if st.form_submit_button("Guardar"):
+                get_ref("logs").add({
+                    'fleetId': u['fleet'], 'busNumber': bus_num, 'category': cat,
+                    'part': trabajo, 'cost': costo, 'abono': abono,
+                    'date': datetime.now().strftime("%d/%m/%Y"), 'createdAt': datetime.now()
+                })
+                st.success("✅ Guardado"); time.sleep(1); st.session_state.page = "🏠 Inicio"; st.rerun()
 
-    # --- PÁGINA: HISTORIAL ---
     elif "Historial" in st.session_state.page or "Reportes" in st.session_state.page:
-        st.header("📋 Carpeta de Mantenimiento")
-        logs = [{"id": l.id, **l.to_dict()} for l in get_ref("logs").stream() if l.to_dict().get('fleetId') == u['fleet']]
-        if u['role'] == 'driver': logs = [l for l in logs if l['busNumber'] == u['bus']]
-        
-        for l in sorted(logs, key=lambda x: x.get('createdAt', datetime.now()), reverse=True):
-            color = CAT_COLORS.get(l.get('category'), "#64748b")
-            st.markdown(f"""
-            <div class='bus-card' style='border-left: 10px solid {color}'>
-                <div style='display:flex; justify-content:space-between'>
-                    <span style='background:{color}; color:white; padding:2px 10px; border-radius:10px; font-size:10px; font-weight:bold;'>{l.get('category')}</span>
-                    <span style='color:gray; font-size:12px;'>{l.get('date')}</span>
-                </div>
-                <h4 style='margin:10px 0;'>Bus {l.get('busNumber')} - {l.get('part')}</h4>
-                <p style='font-size:13px; color:#1e293b'><b>Falla:</b> {l.get('fault', 'S/D')}</p>
-                <div style='display:flex; justify-content:space-between; align-items:center;'>
-                    <span style='font-weight:800'>${l.get('cost', 0):,.2f}</span>
-                    <span style='color:{"#16a34a" if l["cost"]==l["abono"] else "#ef4444"}; font-weight:bold; font-size:12px;'>
-                        {"✅ PAGADO" if l["cost"]==l["abono"] else f"🚨 DEBE: ${l['cost']-l['abono']:,.2f}"}
-                    </span>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+        st.header("📋 Historial")
+        logs = [l.to_dict() for l in get_ref("logs").stream() if l.to_dict().get('fleetId') == u['fleet']]
+        for l in logs:
+            st.write(f"Bus {l['busNumber']} - {l['part']} - ${l['cost']}")
 
-st.caption(f"Itero V14.0 | Intercomunicación Activa | ID: {app_id}")
+st.caption(f"Itero V15.0 | Acceso Validado | ID: {app_id}")
