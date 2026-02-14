@@ -5,7 +5,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 import json
 import time
-import urllib.parse # Para crear los links de WhatsApp
+import urllib.parse
 
 # --- 1. CONFIGURACIÓN ---
 st.set_page_config(page_title="Itaro", layout="wide", page_icon="🚛")
@@ -14,8 +14,12 @@ st.markdown("""
     <style>
     .main-title { font-size: 60px; font-weight: 800; color: #1E1E1E; text-align: center; margin-top: -20px; }
     .stButton>button { width: 100%; border-radius: 8px; font-weight: bold; border: 1px solid #ddd; }
-    .status-active { color: green; font-weight: bold; }
-    .status-inactive { color: red; font-weight: bold; }
+    /* Botón de Cerrar Sesión Rojo */
+    div[data-testid="stSidebar"] .stButton:last-child button {
+        background-color: #FF4B4B;
+        color: white;
+        border: none;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -48,11 +52,11 @@ if 'user' not in st.session_state:
         }
         st.rerun()
 
-# --- 4. ACCESO ---
+# --- 4. ACCESO (LOGIN / REGISTRO / GOD MODE) ---
 if 'user' not in st.session_state:
     st.markdown('<div class="main-title">Itaro</div>', unsafe_allow_html=True)
     
-    t1, t2, t3 = st.tabs(["👤 Ingresar", "📝 Crear Flota", "⚙️ Admin"])
+    t1, t2, t3 = st.tabs(["👤 Ingresar", "📝 Crear Flota", "⚙️ Super Admin"])
 
     with t1: # LOGIN
         with st.container(border=True):
@@ -66,11 +70,12 @@ if 'user' not in st.session_state:
                     doc = FLEETS_REF.document(f_in).get()
                     if doc.exists:
                         if doc.to_dict().get('status') == 'suspended':
-                            st.error("🚫 Cuenta suspendida.")
+                            st.error("🚫 ESTA CUENTA ESTÁ SUSPENDIDA.")
                         else:
                             auth = FLEETS_REF.document(f_in).collection("authorized_users").document(u_in).get()
                             is_owner = "Adm" in r_in
                             
+                            # Regla: El dueño entra, o el chofer si está activo en la lista
                             if is_owner or (auth.exists and auth.to_dict().get('active', True)):
                                 role = 'owner' if is_owner else 'driver'
                                 u_data = {'role': role, 'fleet': f_in, 'name': u_in, 'bus': b_in if b_in else "0"}
@@ -95,13 +100,36 @@ if 'user' not in st.session_state:
                         st.success("✅ Creado.")
                     else: st.error("Código ocupado.")
 
-    with t3: # ADMIN
+    with t3: # MODO DIOS (Modificado)
         if st.text_input("Llave Maestra", type="password") == MASTER_KEY and db:
+            st.write("### Control Total de Flotas")
             for f in FLEETS_REF.stream():
-                c1, c2 = st.columns([3,1])
-                c1.write(f"🏢 {f.id} ({f.to_dict().get('status')})")
-                if c2.button("DEL", key=f.id):
-                    FLEETS_REF.document(f.id).delete(); st.rerun()
+                d = f.to_dict()
+                status = d.get('status', 'active')
+                
+                with st.container(border=True):
+                    c1, c2, c3, c4 = st.columns([3, 2, 1, 1])
+                    c1.write(f"🏢 **{f.id}**")
+                    c1.caption(f"Dueño: {d.get('owner')}")
+                    
+                    # Estado Visual
+                    if status == 'active':
+                        c2.success("ACTIVA")
+                        label_susp = "SUSPENDER"
+                    else:
+                        c2.error("SUSPENDIDA")
+                        label_susp = "ACTIVAR"
+                    
+                    # Botón Suspender
+                    if c3.button(label_susp, key=f"s_{f.id}"):
+                        new_st = "suspended" if status == 'active' else "active"
+                        FLEETS_REF.document(f.id).update({"status": new_st})
+                        st.rerun()
+                        
+                    # Botón Eliminar
+                    if c4.button("🗑️", key=f"d_{f.id}", help="Borrar definitivamente"):
+                        FLEETS_REF.document(f.id).delete()
+                        st.rerun()
 
 # --- 5. SISTEMA OPERATIVO ---
 else:
@@ -125,7 +153,7 @@ else:
             
             for c in cols: 
                 if c not in df.columns: 
-                    df[c] = "" if c == 'observations' else 0 # Observaciones texto, resto 0
+                    df[c] = "" if c == 'observations' else 0 
             
             for nc in ['km_current', 'km_next', 'mec_cost', 'com_cost', 'mec_paid', 'com_paid']:
                 df[nc] = pd.to_numeric(df[nc], errors='coerce').fillna(0)
@@ -134,15 +162,12 @@ else:
         except: return [], pd.DataFrame()
 
     providers, df = load_data()
-    
-    # Mapa de teléfonos para WhatsApp automático
     phone_map = {p['name']: p.get('phone', '') for p in providers}
 
     # Sidebar
     st.sidebar.markdown("<h1 style='text-align: center;'>Itaro</h1>", unsafe_allow_html=True)
     st.sidebar.caption(f"Usuario: {u['name']}")
     
-    # Botón Offline
     if not df.empty:
         csv = df.to_csv(index=False).encode('utf-8')
         st.sidebar.download_button("📥 Descargar Datos", csv, "itaro_data.csv", "text/csv")
@@ -152,11 +177,10 @@ else:
     
     choice = st.sidebar.radio("Navegación", menu)
 
-    # --- 1. GESTIÓN DE PERSONAL (COMPLETA) ---
+    # --- 1. PERSONAL (CON CÉDULA Y TELÉFONO) ---
     if choice == "👥 Personal":
         st.header("Gestión de Conductores")
-        
-        with st.expander("➕ Agregar Nuevo Conductor", expanded=True):
+        with st.expander("➕ Agregar Conductor", expanded=True):
             with st.form("new_driver"):
                 c1, c2, c3 = st.columns(3)
                 d_name = c1.text_input("Nombre Completo").upper().strip()
@@ -168,182 +192,148 @@ else:
                             "active": True, "cedula": d_ced, "phone": d_tel, "date": datetime.now().isoformat()
                         })
                         st.success("Guardado."); time.sleep(1); st.rerun()
-                    else: st.error("Nombre requerido o sin conexión.")
         
-        st.write("### Lista de Personal")
+        st.write("### Nómina")
         if db:
             users_ref = FLEETS_REF.document(u['fleet']).collection("authorized_users").stream()
             for us in users_ref:
                 d = us.to_dict()
-                if d.get('role') != 'admin': # No mostrar al dueño para no auto-borrarse
+                if d.get('role') != 'admin':
                     with st.container(border=True):
                         c1, c2, c3, c4 = st.columns([3, 2, 1, 1])
-                        status = "🟢 Activo" if d.get('active', True) else "🔴 Suspendido"
+                        st_icon = "🟢" if d.get('active', True) else "🔴"
                         c1.write(f"**{us.id}**")
-                        c1.caption(f"Cédula: {d.get('cedula','--')} | Tel: {d.get('phone','--')}")
-                        c2.write(status)
+                        c1.caption(f"🆔 {d.get('cedula','--')} | 📞 {d.get('phone','--')}")
+                        c2.write(st_icon)
                         
-                        # Suspender
-                        btn_label = "🔒" if d.get('active', True) else "🔓"
-                        if c3.button(btn_label, key=f"s_{us.id}", help="Suspender/Activar"):
+                        if c3.button("🔒/🔓", key=f"s_{us.id}"):
                             FLEETS_REF.document(u['fleet']).collection("authorized_users").document(us.id).update({"active": not d.get('active', True)})
                             st.rerun()
-                        
-                        # Eliminar
-                        if c4.button("🗑️", key=f"d_{us.id}", help="Eliminar permanentemente"):
+                        if c4.button("🗑️", key=f"d_{us.id}"):
                             FLEETS_REF.document(u['fleet']).collection("authorized_users").document(us.id).delete()
                             st.rerun()
 
-    # --- 2. BUSCADOR POR PALABRAS ---
+    # --- 2. BUSCADOR ---
     elif choice == "🔍 Buscador":
-        st.header("Historial de Mantenimiento")
-        search = st.text_input("🔎 Buscar (Ej: 'Aceite', 'Frenos', 'Roto')", placeholder="Escribe aquí...")
-        
-        if not df.empty:
-            # Filtrar
-            if search:
-                mask = df.apply(lambda row: search.lower() in str(row['category']).lower() or search.lower() in str(row['observations']).lower(), axis=1)
-                results = df[mask]
-            else:
-                results = df
-            
-            st.dataframe(results[['date', 'bus', 'category', 'observations', 'km_current', 'mec_cost', 'com_cost']].sort_values('date', ascending=False), hide_index=True)
-        else:
-            st.info("No hay registros aún.")
+        st.header("Buscador Inteligente")
+        search = st.text_input("Escriba para buscar (Ej: Aceite, Focos, 10w40)...")
+        if not df.empty and search:
+            mask = df.apply(lambda row: search.lower() in str(row['category']).lower() or search.lower() in str(row['observations']).lower(), axis=1)
+            st.dataframe(df[mask][['date', 'bus', 'category', 'observations', 'km_current']].sort_values('date', ascending=False), hide_index=True)
+        elif not df.empty:
+            st.dataframe(df[['date', 'bus', 'category', 'observations']].head(10), hide_index=True)
 
-    # --- 3. CONTABILIDAD (CON WHATSAPP) ---
+    # --- 3. CONTABILIDAD (WHATSAPP) ---
     elif choice == "💰 Contabilidad":
-        st.header("Finanzas y Pagos")
-        
-        # Comparativa de Unidades (Solo Dueño)
+        st.header("Finanzas")
         if u['role'] == 'owner' and not df.empty:
-            st.subheader("Comparativa de Gastos")
-            df['total_cost'] = df['mec_cost'] + df['com_cost']
-            gastos = df.groupby('bus')['total_cost'].sum().reset_index()
-            st.dataframe(gastos, hide_index=True)
-        
-        st.subheader("Cuentas por Pagar")
-        df['d_m'] = df['mec_cost'] - df['mec_paid']
-        df['d_c'] = df['com_cost'] - df['com_paid']
-        pend = df[(df['d_m'] > 0) | (df['d_c'] > 0)]
-        
-        if pend.empty: st.success("Todo pagado.")
+            st.caption("Gastos Totales por Unidad")
+            df['total'] = df['mec_cost'] + df['com_cost']
+            st.bar_chart(df.groupby('bus')['total'].sum())
+
+        st.subheader("Pagos Pendientes")
+        pend = df[(df['mec_cost'] > df['mec_paid']) | (df['com_cost'] > df['com_paid'])]
+        if pend.empty: st.success("Al día.")
         
         for _, r in pend.iterrows():
             with st.container(border=True):
-                st.write(f"📅 {r['date'].date()} | **Bus {r['bus']}** - {r['category']}")
-                st.caption(f"Obs: {r['observations']}")
-                
+                st.write(f"**{r['category']}** (Bus {r['bus']}) - {r['date'].date()}")
                 c1, c2 = st.columns(2)
                 
-                # Pago Mecánico
-                if r['d_m'] > 0:
-                    c1.error(f"🔧 Mecánico ({r.get('mec_name','NA')}): ${r['d_m']:,.2f}")
+                # Mecánico
+                debt_m = r['mec_cost'] - r['mec_paid']
+                if debt_m > 0:
+                    c1.error(f"Mecánico: ${debt_m:,.2f}")
                     if u['role'] == 'owner':
-                        v = c1.number_input("Abonar", key=f"vm_{r['id']}")
-                        if c1.button("Pagar", key=f"bm_{r['id']}") and db:
+                        v = c1.number_input("Abono", key=f"m{r['id']}")
+                        if c1.button("Pagar", key=f"bm{r['id']}") and db:
                             DATA_REF.collection("logs").document(r['id']).update({"mec_paid": firestore.Increment(v)})
-                            # Link WhatsApp
                             tel = phone_map.get(r.get('mec_name'), '')
-                            msg = f"Hola, le realizamos un abono de ${v} por el trabajo de {r['category']} en la unidad {r['bus']}."
-                            link = f"https://wa.me/{tel}?text={urllib.parse.quote(msg)}"
-                            c1.markdown(f"[📲 Enviar Comprobante WA]({link})", unsafe_allow_html=True)
-                            
-                # Pago Comercio
-                if r['d_c'] > 0:
-                    c2.warning(f"📦 Repuestos ({r.get('com_name','NA')}): ${r['d_c']:,.2f}")
-                    if u['role'] == 'owner':
-                        v = c2.number_input("Abonar", key=f"vc_{r['id']}")
-                        if c2.button("Pagar", key=f"bc_{r['id']}") and db:
-                            DATA_REF.collection("logs").document(r['id']).update({"com_paid": firestore.Increment(v)})
-                            # Link WhatsApp
-                            tel = phone_map.get(r.get('com_name'), '')
-                            msg = f"Hola, le realizamos un abono de ${v} por los repuestos de {r['category']} para la unidad {r['bus']}."
-                            link = f"https://wa.me/{tel}?text={urllib.parse.quote(msg)}"
-                            c2.markdown(f"[📲 Enviar Comprobante WA]({link})", unsafe_allow_html=True)
+                            msg = f"Abono de ${v} por {r['category']} (Bus {r['bus']})."
+                            c1.markdown(f"[📲 Enviar Comprobante]({f'https://wa.me/{tel}?text={urllib.parse.quote(msg)}'})")
 
-    # --- 4. TALLER (MÁS OPCIONES Y OBS) ---
+                # Comercio
+                debt_c = r['com_cost'] - r['com_paid']
+                if debt_c > 0:
+                    c2.warning(f"Repuestos: ${debt_c:,.2f}")
+                    if u['role'] == 'owner':
+                        v = c2.number_input("Abono", key=f"c{r['id']}")
+                        if c2.button("Pagar", key=f"bc{r['id']}") and db:
+                            DATA_REF.collection("logs").document(r['id']).update({"com_paid": firestore.Increment(v)})
+                            tel = phone_map.get(r.get('com_name'), '')
+                            msg = f"Abono de ${v} por repuestos de {r['category']} (Bus {r['bus']})."
+                            c2.markdown(f"[📲 Enviar Comprobante]({f'https://wa.me/{tel}?text={urllib.parse.quote(msg)}'})")
+
+    # --- 4. TALLER (OBSERVACIONES) ---
     elif choice == "🛠️ Taller":
-        st.header("Registro de Mantenimiento")
-        
+        st.header("Mantenimiento")
         mecs = [p['name'] for p in providers if p['type'] == "Mecánico"]
         coms = [p['name'] for p in providers if p['type'] == "Comercio"]
         
-        with st.form("taller_full"):
-            tipo = st.radio("Tipo", ["Mantenimiento Preventivo (Aceite/Frenos/Llantas)", "Reparación Correctiva (Daños/Carrocería)"])
-            
+        with st.form("t"):
+            tp = st.radio("Tipo", ["Preventivo (Alerta KM)", "Correctivo (Solo Registro)"])
             c1, c2 = st.columns(2)
-            cats = ["Aceite Motor", "Aceite Caja", "Aceite Corona", "Frenos", "Llantas", "Suspensión", "Eléctrico", "Carrocería", "Vidrios", "Tapicería", "Otro"]
-            cat = c1.selectbox("Categoría Detallada", cats)
-            obs = c2.text_area("Observaciones (Marca, detalles...)", height=1)
-            
+            cat = c1.selectbox("Categoría", ["Aceite Motor", "Caja", "Corona", "Frenos", "Llantas", "Eléctrico", "Carrocería", "Otro"])
+            obs = c2.text_area("Observaciones (Marca, detalles)")
             ka = c1.number_input("KM Actual", min_value=0)
             kn = 0
-            if "Preventivo" in tipo:
-                kn = c2.number_input("Próximo Cambio a los...", min_value=ka)
-                st.caption("ℹ️ Generará alerta.")
+            if "Preventivo" in tp:
+                kn = c2.number_input("Próximo Cambio", min_value=ka)
             
             st.divider()
-            col_m, col_r = st.columns(2)
-            mn = col_m.selectbox("Mecánico", ["N/A"] + mecs); mc = col_m.number_input("Mano Obra $")
-            rn = col_r.selectbox("Comercio", ["N/A"] + coms); rc = col_r.number_input("Repuestos $")
+            c3, c4 = st.columns(2)
+            mn = c3.selectbox("Mecánico", ["N/A"] + mecs); mc = c3.number_input("Mano Obra $")
+            rn = c4.selectbox("Comercio", ["N/A"] + coms); rc = c4.number_input("Repuestos $")
             
-            if st.form_submit_button("GUARDAR"):
+            if st.form_submit_button("Guardar"):
                 if db:
                     DATA_REF.collection("logs").add({
                         "fleetId": u['fleet'], "bus": u['bus'], "date": datetime.now().isoformat(),
-                        "category": cat, "observations": obs, 
-                        "km_current": ka, "km_next": kn,
+                        "category": cat, "observations": obs, "km_current": ka, "km_next": kn,
                         "mec_name": mn, "mec_cost": mc, "mec_paid": 0,
                         "com_name": rn, "com_cost": rc, "com_paid": 0
                     })
                     st.success("Guardado"); time.sleep(1); st.rerun()
                 else: st.error("Sin internet")
 
-    # --- 5. DIRECTORIO (CON TELÉFONO OBLIGATORIO) ---
+    # --- 5. DIRECTORIO ---
     elif choice == "🏢 Directorio":
         st.header("Proveedores")
-        with st.form("add_prov"):
-            n = st.text_input("Nombre / Local")
-            p = st.text_input("WhatsApp (con código país, ej: 593...)")
-            t = st.selectbox("Tipo", ["Mecánico", "Comercio"])
-            if st.form_submit_button("Guardar"):
-                if db and n and p:
-                    DATA_REF.collection("providers").add({"name":n, "phone":p, "type":t, "fleetId":u['fleet']})
-                    st.rerun()
-                else: st.warning("Nombre y WhatsApp requeridos")
-        
-        for p in providers:
-            st.write(f"🔹 **{p['name']}** - 📞 {p.get('phone')} ({p['type']})")
+        with st.form("d"):
+            n = st.text_input("Nombre"); p = st.text_input("WhatsApp"); t = st.selectbox("Tipo", ["Mecánico", "Comercio"])
+            if st.form_submit_button("Guardar") and db:
+                DATA_REF.collection("providers").add({"name":n, "phone":p, "type":t, "fleetId":u['fleet']})
+                st.rerun()
+        for p in providers: st.write(f"🔹 {p['name']} ({p['phone']})")
 
-    # --- 6. RADAR Y COMBUSTIBLE (RESUMIDOS) ---
+    # --- 6. RADAR & GAS ---
     elif choice == "🏠 Radar":
-        st.header("Radar de Unidades")
-        # ... (Lógica de radar v54 mantenida)
+        st.subheader("Radar de Unidades")
         buses = sorted(df['bus'].unique()) if u['role'] == 'owner' else [u['bus']]
         for b in buses:
             b_df = df[df['bus'] == b].sort_values('date', ascending=False)
             if not b_df.empty:
-                latest = b_df.iloc[0]
-                days = (datetime.now() - latest['date']).days
+                lat = b_df.iloc[0]
+                days = (datetime.now() - lat['date']).days
                 with st.container(border=True):
                     c1, c2 = st.columns(2)
-                    c1.write(f"**Unidad {b}**")
-                    if days >= 3: c1.error(f"⚠️ {days} días inactivo")
-                    c2.metric("KM", f"{latest['km_current']:,.0f}")
+                    c1.write(f"**Unidad {b}**"); c2.metric("KM", f"{lat['km_current']:,.0f}")
+                    if days >= 3: st.error(f"⚠️ {days} días inactivo")
 
     elif choice == "⛽ Combustible":
-        st.header("Carga de Combustible")
-        with st.form("fuel"):
-            k = st.number_input("KM Actual", min_value=0)
-            g = st.number_input("Galones"); c = st.number_input("Costo $")
+        st.subheader("Carga Combustible")
+        with st.form("f"):
+            k = st.number_input("KM"); g = st.number_input("Galones"); c = st.number_input("Costo $")
             if st.form_submit_button("Guardar") and db:
                 DATA_REF.collection("logs").add({
                     "fleetId": u['fleet'], "bus": u['bus'], "date": datetime.now().isoformat(),
-                    "category": "Combustible", "observations": "Carga normal",
-                    "km_current": k, "km_next": 0, "gallons": g, "com_cost": c, "com_paid": c
+                    "category": "Combustible", "km_current": k, "gallons": g, "com_cost": c, "com_paid": c
                 })
-                st.success("Guardado"); st.rerun()
+                st.success("Ok"); st.rerun()
 
-    if st.sidebar.button("Salir"):
-        st.session_state.clear(); st.rerun()
+    # --- BOTÓN CERRAR SESIÓN ---
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🚪 CERRAR SESIÓN"):
+        st.session_state.clear()
+        st.query_params.clear()
+        st.rerun()
