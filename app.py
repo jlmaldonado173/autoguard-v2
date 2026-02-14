@@ -58,43 +58,53 @@ if 'user' not in st.session_state:
             r_in = st.selectbox("Perfil", ["Conductor", "Administrador/Dueño"])
             
             if st.button("INGRESAR"):
-                fleet_doc = FLEETS_REF.document(f_in).get()
-                if fleet_doc.exists:
-                    f_data = fleet_doc.to_dict()
-                    
-                    # 1. VERIFICAR SI TÚ (SUPER ADMIN) LOS BLOQUEASTE
-                    if f_data.get('status') == 'suspended':
-                        st.error("🚫 SERVICIO SUSPENDIDO. CONTACTE AL PROVEEDOR DEL SOFTWARE.")
-                        st.stop()
-                    
-                    # 2. VERIFICAR SI EL DUEÑO DE LA FLOTA LOS BLOQUEÓ A ELLOS
-                    auth_doc = FLEETS_REF.document(f_in).collection("authorized_users").document(u_in).get()
-                    is_owner = "Adm" in r_in
-                    
-                    access = False
-                    if is_owner: access = True # El dueño siempre entra (si la flota no está suspendida por ti)
-                    elif auth_doc.exists and auth_doc.to_dict().get('active', True): access = True
-                    
-                    if access:
-                        u_data = {'role':'owner' if is_owner else 'driver', 'fleet':f_in, 'name':u_in, 'bus':b_in}
-                        st.session_state.user = u_data
-                        st.query_params.update({"f":f_in, "u":u_in, "b":b_in, "r":u_data['role']})
-                        st.rerun()
-                    else:
-                        st.error("❌ Usuario no autorizado o suspendido por el dueño de la flota.")
+                # --- CORRECCIÓN DEL ERROR (VALIDACIÓN PREVIA) ---
+                if not f_in:
+                    st.warning("⚠️ Por favor, escriba el Código de Empresa.")
+                elif not u_in:
+                    st.warning("⚠️ Por favor, escriba su Usuario.")
                 else:
-                    st.error("Empresa no encontrada.")
+                    # Solo si hay texto, consultamos a Firebase
+                    fleet_doc = FLEETS_REF.document(f_in).get()
+                    if fleet_doc.exists:
+                        f_data = fleet_doc.to_dict()
+                        
+                        # 1. VERIFICAR BLOQUEO SaaS
+                        if f_data.get('status') == 'suspended':
+                            st.error("🚫 SERVICIO SUSPENDIDO. CONTACTE AL PROVEEDOR DEL SOFTWARE.")
+                            st.stop()
+                        
+                        # 2. VERIFICAR USUARIO
+                        auth_doc = FLEETS_REF.document(f_in).collection("authorized_users").document(u_in).get()
+                        is_owner = "Adm" in r_in
+                        
+                        access = False
+                        if is_owner: access = True 
+                        elif auth_doc.exists and auth_doc.to_dict().get('active', True): access = True
+                        
+                        if access:
+                            u_data = {'role':'owner' if is_owner else 'driver', 'fleet':f_in, 'name':u_in, 'bus':b_in}
+                            st.session_state.user = u_data
+                            st.query_params.update({"f":f_in, "u":u_in, "b":b_in, "r":u_data['role']})
+                            st.rerun()
+                        else:
+                            st.error("❌ Usuario no autorizado o suspendido.")
+                    else:
+                        st.error("❌ Empresa no encontrada.")
 
     # B. REGISTRO DE NUEVOS CLIENTES
     with t_reg:
         new_f = st.text_input("ID Nueva Empresa").upper().strip()
         adm_n = st.text_input("Nombre del Cliente (Dueño)").upper().strip()
         if st.button("REGISTRAR CLIENTE"):
-            if new_f and not FLEETS_REF.document(new_f).get().exists:
-                FLEETS_REF.document(new_f).set({"owner": adm_n, "created": datetime.now(), "status": "active"})
-                FLEETS_REF.document(new_f).collection("authorized_users").document(adm_n).set({"active": True})
-                st.success("✅ Cliente registrado.")
-            else: st.error("ID ya existe.")
+            if new_f and adm_n: # Validación también aquí
+                if not FLEETS_REF.document(new_f).get().exists:
+                    FLEETS_REF.document(new_f).set({"owner": adm_n, "created": datetime.now(), "status": "active"})
+                    FLEETS_REF.document(new_f).collection("authorized_users").document(adm_n).set({"active": True})
+                    st.success("✅ Cliente registrado.")
+                else: st.error("ID ya existe.")
+            else:
+                st.warning("Complete los campos.")
 
     # C. TU PANEL (SUPER ADMIN)
     with t_admin:
@@ -128,10 +138,15 @@ else:
     u = st.session_state.user
     
     # Verificación continua de bloqueo SaaS
-    f_status = FLEETS_REF.document(u['fleet']).get().to_dict().get('status', 'active')
-    if f_status == 'suspended':
-        st.error("🚫 SU SERVICIO HA SIDO SUSPENDIDO. CERRANDO SESIÓN...")
-        time.sleep(3); st.session_state.clear(); st.rerun()
+    # Protección extra por si se borró la flota mientras estaba logueado
+    f_check = FLEETS_REF.document(u['fleet']).get()
+    if f_check.exists:
+        f_status = f_check.to_dict().get('status', 'active')
+        if f_status == 'suspended':
+            st.error("🚫 SU SERVICIO HA SIDO SUSPENDIDO. CERRANDO SESIÓN...")
+            time.sleep(3); st.session_state.clear(); st.rerun()
+    else:
+        st.error("Error de conexión con la flota."); st.stop()
 
     # --- MOTOR DE DATOS BLINDADO (v38) ---
     def load_full_data():
@@ -184,7 +199,7 @@ else:
                 c1.metric("KM Actual", f"{row['km_current']:,.0f}")
                 c2.metric("Próximo Servicio", f"{km_r:,.0f} KM", delta_color="inverse" if km_r < 500 else "normal")
             else: st.info("Sin registros.")
-        else: st.info("Bienvenido.")
+        else: st.info("Bienvenido. Registra tu primer mantenimiento en Taller.")
 
     # --- MÓDULO 2: TALLER (Conexión Directorio) ---
     elif choice == "🛠️ Taller":
