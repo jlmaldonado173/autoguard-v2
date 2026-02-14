@@ -8,7 +8,7 @@ import time
 import urllib.parse
 
 # --- 1. CONFIGURACIÓN ---
-st.set_page_config(page_title="ITARO", layout="wide", page_icon="🚛")
+st.set_page_config(page_title="Itaro", layout="wide", page_icon="🚛")
 
 st.markdown("""
     <style>
@@ -36,7 +36,7 @@ def init_db():
 
 db = init_db()
 APP_ID = "itero-titanium-v15"
-MASTER_KEY = "JOSEANTONIO"
+MASTER_KEY = "ADMIN123"
 
 if db:
     FLEETS_REF = db.collection("artifacts").document(APP_ID).collection("registered_fleets")
@@ -56,7 +56,7 @@ if 'user' not in st.session_state:
 if 'user' not in st.session_state:
     st.markdown('<div class="main-title">Itaro</div>', unsafe_allow_html=True)
     
-    t1, t2, t3 = st.tabs(["👤 Ingresar", "📝 Crear Flota", "⚙️ admin"])
+    t1, t2, t3 = st.tabs(["👤 Ingresar", "📝 Crear Flota", "⚙️ Super Admin"])
 
     with t1: # LOGIN
         with st.container(border=True):
@@ -100,7 +100,7 @@ if 'user' not in st.session_state:
                         st.success("✅ Creado.")
                     else: st.error("Código ocupado.")
 
-    with t3: # MODO DIOS (Modificado)
+    with t3: # MODO DIOS
         if st.text_input("Llave Maestra", type="password") == MASTER_KEY and db:
             st.write("### Control Total de Flotas")
             for f in FLEETS_REF.stream():
@@ -112,21 +112,17 @@ if 'user' not in st.session_state:
                     c1.write(f"🏢 **{f.id}**")
                     c1.caption(f"Dueño: {d.get('owner')}")
                     
-                    # Estado Visual
                     if status == 'active':
                         c2.success("ACTIVA")
-                        label_susp = "SUSPENDER"
+                        if c3.button("SUSPENDER", key=f"s_{f.id}"):
+                            FLEETS_REF.document(f.id).update({"status": "suspended"})
+                            st.rerun()
                     else:
                         c2.error("SUSPENDIDA")
-                        label_susp = "ACTIVAR"
-                    
-                    # Botón Suspender
-                    if c3.button(label_susp, key=f"s_{f.id}"):
-                        new_st = "suspended" if status == 'active' else "active"
-                        FLEETS_REF.document(f.id).update({"status": new_st})
-                        st.rerun()
+                        if c3.button("ACTIVAR", key=f"s_{f.id}"):
+                            FLEETS_REF.document(f.id).update({"status": "active"})
+                            st.rerun()
                         
-                    # Botón Eliminar
                     if c4.button("🗑️", key=f"d_{f.id}", help="Borrar definitivamente"):
                         FLEETS_REF.document(f.id).delete()
                         st.rerun()
@@ -177,7 +173,7 @@ else:
     
     choice = st.sidebar.radio("Navegación", menu)
 
-    # --- 1. PERSONAL (CON CÉDULA Y TELÉFONO) ---
+    # --- 1. PERSONAL ---
     if choice == "👥 Personal":
         st.header("Gestión de Conductores")
         with st.expander("➕ Agregar Conductor", expanded=True):
@@ -223,7 +219,7 @@ else:
         elif not df.empty:
             st.dataframe(df[['date', 'bus', 'category', 'observations']].head(10), hide_index=True)
 
-    # --- 3. CONTABILIDAD (WHATSAPP) ---
+    # --- 3. CONTABILIDAD ---
     elif choice == "💰 Contabilidad":
         st.header("Finanzas")
         if u['role'] == 'owner' and not df.empty:
@@ -264,34 +260,37 @@ else:
                             msg = f"Abono de ${v} por repuestos de {r['category']} (Bus {r['bus']})."
                             c2.markdown(f"[📲 Enviar Comprobante]({f'https://wa.me/{tel}?text={urllib.parse.quote(msg)}'})")
 
-    # --- 4. TALLER (OBSERVACIONES) ---
+    # --- 4. TALLER (CON ABONOS INICIALES Y OBS) ---
     elif choice == "🛠️ Taller":
-        st.header("Mantenimiento")
+        st.header("Registro de Mantenimiento")
+        
         mecs = [p['name'] for p in providers if p['type'] == "Mecánico"]
         coms = [p['name'] for p in providers if p['type'] == "Comercio"]
         
-        with st.form("t"):
-            tp = st.radio("Tipo", ["Preventivo (Alerta KM)", "Correctivo (Solo Registro)"])
+        with st.form("taller_full"):
+            tipo = st.radio("Tipo", ["Mantenimiento Preventivo (Aceite/Frenos/Llantas)", "Reparación Correctiva (Daños/Carrocería)"])
+            
             c1, c2 = st.columns(2)
-            cat = c1.selectbox("Categoría", ["Aceite Motor", "Caja", "Corona", "Frenos", "Llantas", "Eléctrico", "Carrocería", "tapiceria", "refrigerante", "Otro" ])
-            obs = c2.text_area("Observaciones (Marca, detalles)")
+            cats = ["Aceite Motor", "Aceite Caja", "Aceite Corona", "Frenos", "Llantas", "Suspensión", "Eléctrico", "Carrocería", "Vidrios", "Tapicería", "Otro"]
+            cat = c1.selectbox("Categoría Detallada", cats)
+            obs = c2.text_area("Observaciones (Marca, detalles...)", height=1)
+            
             ka = c1.number_input("KM Actual", min_value=0)
             kn = 0
-            if "Preventivo" in tp:
-                kn = c2.number_input("Próximo Cambio", min_value=ka)
-                        st.divider()
+            if "Preventivo" in tipo:
+                kn = c2.number_input("Próximo Cambio a los...", min_value=ka)
+                st.caption("ℹ️ Generará alerta.")
+            
+            st.divider()
             c3, c4 = st.columns(2)
             
-            # --- LADO MECÁNICO ---
+            # BLOQUE ACTUALIZADO CON ABONOS INICIALES
             mn = c3.selectbox("Mecánico", ["N/A"] + mecs)
             mc = c3.number_input("Costo Mano Obra ($)", min_value=0.0)
-            # Nuevo campo de Abono
             mp = c3.number_input("Abono Inicial Mecánico ($)", min_value=0.0, max_value=mc, help="Lo que se paga hoy")
 
-            # --- LADO COMERCIO ---
             rn = c4.selectbox("Comercio", ["N/A"] + coms)
             rc = c4.number_input("Costo Repuestos ($)", min_value=0.0)
-            # Nuevo campo de Abono
             cp = c4.number_input("Abono Inicial Repuestos ($)", min_value=0.0, max_value=rc, help="Lo que se paga hoy")
             
             if st.form_submit_button("GUARDAR"):
@@ -300,24 +299,13 @@ else:
                         "fleetId": u['fleet'], "bus": u['bus'], "date": datetime.now().isoformat(),
                         "category": cat, "observations": obs, 
                         "km_current": ka, "km_next": kn,
-                        "mec_name": mn, "mec_cost": mc, "mec_paid": mp, # Guardamos el abono aquí
-                        "com_name": rn, "com_cost": rc, "com_paid": cp  # Guardamos el abono aquí
+                        "mec_name": mn, "mec_cost": mc, "mec_paid": mp, 
+                        "com_name": rn, "com_cost": rc, "com_paid": cp
                     })
                     st.success("Guardado"); time.sleep(1); st.rerun()
                 else: st.error("Sin internet")
 
-            if st.form_submit_button("Guardar"):
-                if db:
-                    DATA_REF.collection("logs").add({
-                        "fleetId": u['fleet'], "bus": u['bus'], "date": datetime.now().isoformat(),
-                        "category": cat, "observations": obs, "km_current": ka, "km_next": kn,
-                        "mec_name": mn, "mec_cost": mc, "mec_paid": 0,
-                        "com_name": rn, "com_cost": rc, "com_paid": 0
-                    })
-                    st.success("Guardado"); time.sleep(1); st.rerun()
-                else: st.error("Sin internet")
-
-        # --- 5. DIRECTORIO CON WHATSAPP ---
+    # --- 5. DIRECTORIO (CON WHATSAPP) ---
     elif choice == "🏢 Directorio":
         st.header("Directorio de Proveedores")
         
@@ -326,54 +314,34 @@ else:
             with st.form("add_prov_form"):
                 c1, c2 = st.columns(2)
                 n = c1.text_input("Nombre / Taller").upper()
-                # Nota para el usuario sobre el formato
-                p = c2.text_input("WhatsApp (Ej: 59399...)", help="Ingrese el número con código de país sin el +")
+                p = c2.text_input("WhatsApp (Ej: 59399...)", help="Número con código de país sin el +")
                 t = st.selectbox("Tipo", ["Mecánico", "Comercio", "Grúa", "Otro"])
                 
                 if st.form_submit_button("GUARDAR CONTACTO"):
                     if db and n:
-                        DATA_REF.collection("providers").add({
-                            "name": n,
-                            "phone": p,
-                            "type": t,
-                            "fleetId": u['fleet']
-                        })
-                        st.success("✅ Proveedor guardado.")
+                        DATA_REF.collection("providers").add({"name":n, "phone":p, "type":t, "fleetId":u['fleet']})
+                        st.success("✅ Guardado.")
                         time.sleep(1); st.rerun()
-                    else:
-                        st.error("⚠️ Falta el nombre o no hay internet.")
+                    else: st.error("Falta nombre o internet.")
 
         st.divider()
         
-        # Listado Visual
+        # Listado Visual con Botones
         if providers:
             for p in providers:
                 with st.container(border=True):
                     col_info, col_wa = st.columns([3, 1])
-                    
-                    # Información del Proveedor
                     with col_info:
                         icon = "🔧" if p.get('type') == "Mecánico" else "📦"
                         st.markdown(f"**{icon} {p.get('name', 'Sin Nombre')}**")
                         st.caption(f"{p.get('type')} | 📞 {p.get('phone', '--')}")
-                    
-                    # Botón de WhatsApp
                     with col_wa:
                         phone = p.get('phone', '').replace('+', '').strip()
                         if phone:
                             link = f"https://wa.me/{phone}"
-                            # Botón verde visual
-                            st.markdown(f'''
-                                <a href="{link}" target="_blank" style="text-decoration:none;">
-                                    <div style="background-color:#25D366; color:white; padding:5px; border-radius:5px; text-align:center; font-weight:bold;">
-                                        💬 Chat
-                                    </div>
-                                </a>
-                            ''', unsafe_allow_html=True)
-                        else:
-                            st.caption("Sin número")
-        else:
-            st.info("📭 Aún no tienes proveedores registrados.")
+                            st.markdown(f'''<a href="{link}" target="_blank" style="text-decoration:none;"><div style="background-color:#25D366; color:white; padding:5px; border-radius:5px; text-align:center; font-weight:bold;">💬 Chat</div></a>''', unsafe_allow_html=True)
+                        else: st.caption("Sin número")
+        else: st.info("📭 Directorio vacío.")
 
     # --- 6. RADAR & GAS ---
     elif choice == "🏠 Radar":
