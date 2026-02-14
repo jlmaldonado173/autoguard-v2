@@ -8,7 +8,7 @@ import time
 import urllib.parse
 
 # --- 1. CONFIGURACIÓN ---
-st.set_page_config(page_title="Itaro", layout="wide", page_icon="🚛")
+st.set_page_config(page_title="ITARO", layout="wide", page_icon="🚛")
 
 st.markdown("""
     <style>
@@ -36,7 +36,7 @@ def init_db():
 
 db = init_db()
 APP_ID = "itero-titanium-v15"
-MASTER_KEY = "ADMIN123"
+MASTER_KEY = "JOSEANTONIO"
 
 if db:
     FLEETS_REF = db.collection("artifacts").document(APP_ID).collection("registered_fleets")
@@ -56,7 +56,7 @@ if 'user' not in st.session_state:
 if 'user' not in st.session_state:
     st.markdown('<div class="main-title">Itaro</div>', unsafe_allow_html=True)
     
-    t1, t2, t3 = st.tabs(["👤 Ingresar", "📝 Crear Flota", "⚙️ Super Admin"])
+    t1, t2, t3 = st.tabs(["👤 Ingresar", "📝 Crear Flota", "⚙️ admin"])
 
     with t1: # LOGIN
         with st.container(border=True):
@@ -273,18 +273,39 @@ else:
         with st.form("t"):
             tp = st.radio("Tipo", ["Preventivo (Alerta KM)", "Correctivo (Solo Registro)"])
             c1, c2 = st.columns(2)
-            cat = c1.selectbox("Categoría", ["Aceite Motor", "Caja", "Corona", "Frenos", "Llantas", "Eléctrico", "Carrocería", "Otro"])
+            cat = c1.selectbox("Categoría", ["Aceite Motor", "Caja", "Corona", "Frenos", "Llantas", "Eléctrico", "Carrocería", "tapiceria", "refrigerante", "Otro" ])
             obs = c2.text_area("Observaciones (Marca, detalles)")
             ka = c1.number_input("KM Actual", min_value=0)
             kn = 0
             if "Preventivo" in tp:
                 kn = c2.number_input("Próximo Cambio", min_value=ka)
-            
-            st.divider()
+                        st.divider()
             c3, c4 = st.columns(2)
-            mn = c3.selectbox("Mecánico", ["N/A"] + mecs); mc = c3.number_input("Mano Obra $")
-            rn = c4.selectbox("Comercio", ["N/A"] + coms); rc = c4.number_input("Repuestos $")
             
+            # --- LADO MECÁNICO ---
+            mn = c3.selectbox("Mecánico", ["N/A"] + mecs)
+            mc = c3.number_input("Costo Mano Obra ($)", min_value=0.0)
+            # Nuevo campo de Abono
+            mp = c3.number_input("Abono Inicial Mecánico ($)", min_value=0.0, max_value=mc, help="Lo que se paga hoy")
+
+            # --- LADO COMERCIO ---
+            rn = c4.selectbox("Comercio", ["N/A"] + coms)
+            rc = c4.number_input("Costo Repuestos ($)", min_value=0.0)
+            # Nuevo campo de Abono
+            cp = c4.number_input("Abono Inicial Repuestos ($)", min_value=0.0, max_value=rc, help="Lo que se paga hoy")
+            
+            if st.form_submit_button("GUARDAR"):
+                if db:
+                    DATA_REF.collection("logs").add({
+                        "fleetId": u['fleet'], "bus": u['bus'], "date": datetime.now().isoformat(),
+                        "category": cat, "observations": obs, 
+                        "km_current": ka, "km_next": kn,
+                        "mec_name": mn, "mec_cost": mc, "mec_paid": mp, # Guardamos el abono aquí
+                        "com_name": rn, "com_cost": rc, "com_paid": cp  # Guardamos el abono aquí
+                    })
+                    st.success("Guardado"); time.sleep(1); st.rerun()
+                else: st.error("Sin internet")
+
             if st.form_submit_button("Guardar"):
                 if db:
                     DATA_REF.collection("logs").add({
@@ -296,15 +317,63 @@ else:
                     st.success("Guardado"); time.sleep(1); st.rerun()
                 else: st.error("Sin internet")
 
-    # --- 5. DIRECTORIO ---
+        # --- 5. DIRECTORIO CON WHATSAPP ---
     elif choice == "🏢 Directorio":
-        st.header("Proveedores")
-        with st.form("d"):
-            n = st.text_input("Nombre"); p = st.text_input("WhatsApp"); t = st.selectbox("Tipo", ["Mecánico", "Comercio"])
-            if st.form_submit_button("Guardar") and db:
-                DATA_REF.collection("providers").add({"name":n, "phone":p, "type":t, "fleetId":u['fleet']})
-                st.rerun()
-        for p in providers: st.write(f"🔹 {p['name']} ({p['phone']})")
+        st.header("Directorio de Proveedores")
+        
+        # Formulario para agregar
+        with st.expander("➕ Agregar Nuevo Proveedor", expanded=False):
+            with st.form("add_prov_form"):
+                c1, c2 = st.columns(2)
+                n = c1.text_input("Nombre / Taller").upper()
+                # Nota para el usuario sobre el formato
+                p = c2.text_input("WhatsApp (Ej: 59399...)", help="Ingrese el número con código de país sin el +")
+                t = st.selectbox("Tipo", ["Mecánico", "Comercio", "Grúa", "Otro"])
+                
+                if st.form_submit_button("GUARDAR CONTACTO"):
+                    if db and n:
+                        DATA_REF.collection("providers").add({
+                            "name": n,
+                            "phone": p,
+                            "type": t,
+                            "fleetId": u['fleet']
+                        })
+                        st.success("✅ Proveedor guardado.")
+                        time.sleep(1); st.rerun()
+                    else:
+                        st.error("⚠️ Falta el nombre o no hay internet.")
+
+        st.divider()
+        
+        # Listado Visual
+        if providers:
+            for p in providers:
+                with st.container(border=True):
+                    col_info, col_wa = st.columns([3, 1])
+                    
+                    # Información del Proveedor
+                    with col_info:
+                        icon = "🔧" if p.get('type') == "Mecánico" else "📦"
+                        st.markdown(f"**{icon} {p.get('name', 'Sin Nombre')}**")
+                        st.caption(f"{p.get('type')} | 📞 {p.get('phone', '--')}")
+                    
+                    # Botón de WhatsApp
+                    with col_wa:
+                        phone = p.get('phone', '').replace('+', '').strip()
+                        if phone:
+                            link = f"https://wa.me/{phone}"
+                            # Botón verde visual
+                            st.markdown(f'''
+                                <a href="{link}" target="_blank" style="text-decoration:none;">
+                                    <div style="background-color:#25D366; color:white; padding:5px; border-radius:5px; text-align:center; font-weight:bold;">
+                                        💬 Chat
+                                    </div>
+                                </a>
+                            ''', unsafe_allow_html=True)
+                        else:
+                            st.caption("Sin número")
+        else:
+            st.info("📭 Aún no tienes proveedores registrados.")
 
     # --- 6. RADAR & GAS ---
     elif choice == "🏠 Radar":
