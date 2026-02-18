@@ -241,8 +241,18 @@ def render_radar(df, user):
     - Dueños: Ven el grid completo y pueden activar la IA por bus.
     """
     st.subheader("📡 Centro de Control")
+    
+    # --- CORRECCIÓN ANTI-ERROR (KeyError) ---
+    # Si el índice se está creando o no hay datos, df vendrá vacío o sin columnas.
+    if df.empty or 'bus' not in df.columns:
+        st.info("⏳ Esperando datos... (Si acabas de crear el índice, espera unos minutos).")
+        return
+    # ----------------------------------------
+
     buses = sorted(df['bus'].unique()) if user['role']=='owner' else [user['bus']]
     
+    # ... (el resto del código sigue igual)
+
     if not buses: 
         st.info("Sin datos recientes. Amplía el rango de fechas.")
         return
