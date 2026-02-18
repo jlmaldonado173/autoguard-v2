@@ -4,4 +4,7 @@ pandas
 Pillow
 requests
 plotly
+google-generativeai
+
+
 
