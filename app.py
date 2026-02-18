@@ -146,35 +146,49 @@ if 'user' not in st.session_state:
 # --- 5. SISTEMA OPERATIVO ---
 else:
     u = st.session_state.user
-    
-# --- REEMPLAZA TU FUNCIÓN DE CARGA O EL BLOQUE DONDE CREAS EL DF POR ESTE ---
-
-def get_safe_data():
-    # 1. Definir columnas obligatorias para que NUNCA falten (evita KeyError)
-    columns_base = [
-        'bus', 'category', 'km_current', 'km_next', 
-        'mec_cost', 'mec_paid', 'com_cost', 'com_paid', 
-        'date', 'mec_name', 'com_name'
-    ]
-    
-    # 2. Obtener datos de Firebase
-    query = DATA_REF.collection("logs").where("fleetId", "==", u['fleet'])
-    if u['role'] == 'driver': 
-        query = query.where("bus", "==", u['bus'])
-    
-    logs_raw = [l.to_dict() | {"id": l.id} for l in query.stream()]
-    
-    # 3. Si no hay datos, devolver DataFrame con columnas vacías pero existentes
-    if not logs_raw:
-        return pd.DataFrame(columns=columns_base)
-    
-    df = pd.DataFrame(logs_raw)
-    
-    # 4. ASEGURAR COLUMNAS: Si falta alguna en Firebase, la crea con valor 0
-    for col in columns_base:
-        if col not in df.columns:
-            df[col] = 0
+    # --- CARGA DE DATOS CORREGIDA (Sin KeyError y con sangría exacta) ---
+    def load_data():
+        if not db: 
+            return [], pd.DataFrame()
+        try:
+            # Cargar proveedores
+            p_docs = DATA_REF.collection("providers").where("fleetId", "==", u['fleet']).stream()
+            provs = [p.to_dict() | {"id": p.id} for p in p_docs]
             
+            # Consultar logs según rol
+            q = DATA_REF.collection("logs").where("fleetId", "==", u['fleet'])
+            if u['role'] == 'driver': 
+                q = q.where("bus", "==", u['bus'])
+            
+            logs = [l.to_dict() | {"id": l.id} for l in q.stream()]
+            
+            # Columnas obligatorias para evitar fallos en Radar y Semáforo
+            cols = ['bus', 'category', 'observations', 'km_current', 'km_next', 'date', 'mec_cost', 'com_cost', 'mec_paid', 'com_paid']
+            
+            if not logs:
+                return provs, pd.DataFrame(columns=cols)
+            
+            df = pd.DataFrame(logs)
+            
+            # Asegurar que existan todas las columnas necesarias
+            for c in cols:
+                if c not in df.columns:
+                    df[c] = "" if c in ['observations', 'bus', 'category'] else 0
+            
+            # Limpieza y conversión de tipos
+            for nc in ['km_current', 'km_next', 'mec_cost', 'com_cost', 'mec_paid', 'com_paid']:
+                df[nc] = pd.to_numeric(df[nc], errors='coerce').fillna(0)
+            
+            df['date'] = pd.to_datetime(df['date'], errors='coerce')
+            
+            return provs, df
+        except Exception as e:
+            # Si algo falla, devolvemos estructura vacía para no romper la app
+            return [], pd.DataFrame(columns=['bus', 'category', 'km_current', 'km_next', 'date'])
+
+    # Ejecutar carga
+    providers, df = load_data()
+
     # 5. CONVERSIÓN SEGURA A NÚMEROS (Evita errores de cálculo)
     num_cols = ['km_current', 'km_next', 'mec_cost', 'mec_paid', 'com_cost', 'com_paid']
     for nc in num_cols:
