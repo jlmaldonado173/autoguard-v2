@@ -12,10 +12,23 @@ st.set_page_config(page_title="Itaro", layout="wide", page_icon="🚛")
 
 st.markdown("""
     <style>
+    /* Título Principal */
     .main-title { font-size: 60px; font-weight: 800; color: #1E1E1E; text-align: center; margin-top: -20px; }
+    
+    /* Botones Generales */
     .stButton>button { width: 100%; border-radius: 8px; font-weight: bold; border: 1px solid #ddd; }
-    div[data-testid="stSidebar"] .stButton:last-child button { background-color: #FF4B4B; color: white; border: none; }
-    .metric-box { background-color: #f0f2f6; border-left: 5px solid #1E1E1E; padding: 15px; border-radius: 5px; margin-bottom: 10px; }
+    
+    /* Botón Rojo (Logout/Eliminar) */
+    div[data-testid="stSidebar"] .stButton:last-child button {
+        background-color: #FF4B4B; color: white; border: none;
+    }
+    
+    /* Cajas de Métricas en Reportes */
+    .metric-box {
+        background-color: #f0f2f6; border-left: 5px solid #1E1E1E; padding: 15px; border-radius: 5px; margin-bottom: 10px;
+    }
+    
+    /* Estados Visuales */
     .status-ok { color: green; font-weight: bold; }
     .status-warn { color: orange; font-weight: bold; }
     .status-err { color: red; font-weight: bold; }
@@ -31,11 +44,11 @@ def init_db():
             firebase_admin.initialize_app(cred)
         return firestore.client()
     except Exception:
-        return None 
+        return None # Modo Offline silencioso
 
 db = init_db()
 APP_ID = "itero-titanium-v15"
-MASTER_KEY = "ADMIN123" 
+MASTER_KEY = "ADMIN123" # Clave del dueño del software
 
 if db:
     FLEETS_REF = db.collection("artifacts").document(APP_ID).collection("registered_fleets")
@@ -56,12 +69,13 @@ if 'user' not in st.session_state:
     st.markdown('<div class="main-title">Itaro</div>', unsafe_allow_html=True)
     t1, t2, t3 = st.tabs(["👤 Ingresar", "📝 Crear Flota", "⚙️ Super Admin"])
 
-    with t1: 
+    with t1: # LOGIN SEGURO
         with st.container(border=True):
             f_in = st.text_input("Código de Flota").upper().strip()
             u_in = st.text_input("Usuario").upper().strip()
             r_in = st.selectbox("Perfil", ["Conductor", "Administrador/Dueño"])
             
+            # Contraseña solo para Admin
             pass_in = ""
             if "Adm" in r_in:
                 pass_in = st.text_input("Contraseña", type="password")
@@ -77,10 +91,14 @@ if 'user' not in st.session_state:
                             st.error("🚫 CUENTA SUSPENDIDA POR EL PROVEEDOR.")
                         else:
                             access = False; role = ""
+                            
+                            # Validación Admin (Password)
                             if "Adm" in r_in:
                                 if data.get('password') == pass_in:
                                     access = True; role = 'owner'
                                 else: st.error("🔒 Contraseña incorrecta.")
+                            
+                            # Validación Conductor (Whitelist)
                             else:
                                 auth = FLEETS_REF.document(f_in).collection("authorized_users").document(u_in).get()
                                 if auth.exists and auth.to_dict().get('active', True):
@@ -95,7 +113,7 @@ if 'user' not in st.session_state:
                     else: st.error("❌ Flota no encontrada.")
                 else: st.error("⚠️ Sin conexión a internet.")
 
-    with t2: 
+    with t2: # REGISTRO
         with st.container(border=True):
             st.info("Cree su empresa y proteja su acceso.")
             nid = st.text_input("Crear Código").upper().strip()
@@ -110,16 +128,18 @@ if 'user' not in st.session_state:
                         st.success("✅ Empresa creada."); time.sleep(1); st.rerun()
                     else: st.error("Código en uso.")
 
-    with t3: 
+    with t3: # MODO DIOS
         if st.text_input("Master Key", type="password") == MASTER_KEY and db:
             for f in FLEETS_REF.stream():
                 d = f.to_dict()
                 c1,c2,c3 = st.columns([3,1,1])
                 c1.write(f"🏢 {f.id} ({d.get('status')})")
+                
                 btn_txt = "SUSPENDER" if d.get('status')=='active' else "ACTIVAR"
                 if c2.button(btn_txt, key=f"s_{f.id}"):
                     ns = "suspended" if d.get('status')=='active' else 'active'
                     FLEETS_REF.document(f.id).update({"status": ns}); st.rerun()
+                    
                 if c3.button("DEL", key=f"d_{f.id}"):
                     FLEETS_REF.document(f.id).delete(); st.rerun()
 
@@ -127,49 +147,52 @@ if 'user' not in st.session_state:
 else:
     u = st.session_state.user
     
-    # --- FUNCIÓN DE CARGA BLINDADA ---
+    # -------------------------------------------------------------
+    # --- FUNCIÓN DE CARGA BLINDADA (CORREGIDA) ---
+    # -------------------------------------------------------------
     def load_data():
         if not db: return [], pd.DataFrame()
         try:
-            # 1. Proveedores
+            # 1. Cargar Proveedores
             p_docs = DATA_REF.collection("providers").where("fleetId", "==", u['fleet']).stream()
             provs = [p.to_dict() | {"id": p.id} for p in p_docs]
-
-            # 2. Logs
+            
+            # 2. Cargar Logs
             q = DATA_REF.collection("logs").where("fleetId", "==", u['fleet'])
             if u['role'] == 'driver': 
                 q = q.where("bus", "==", u['bus'])
             logs = [l.to_dict() | {"id": l.id} for l in q.stream()]
-
+            
             # 3. Columnas obligatorias
             cols = ['bus', 'category', 'observations', 'km_current', 'km_next', 'date', 'mec_cost', 'com_cost', 'mec_paid', 'com_paid', 'gallons']
             
             if not logs:
                 return provs, pd.DataFrame(columns=cols)
-
+            
             df = pd.DataFrame(logs)
-
+            
             # 4. Rellenar faltantes
-            for c in cols:
-                if c not in df.columns:
-                    # Texto para observaciones, 0 para números
-                    df[c] = "" if c == 'observations' else 0
-
-            # 5. Conversión Numérica Forzada
+            for c in cols: 
+                if c not in df.columns: 
+                    df[c] = "" if c == 'observations' else 0 
+            
+            # 5. Convertir a números
             for nc in ['km_current', 'km_next', 'mec_cost', 'com_cost', 'mec_paid', 'com_paid', 'gallons']:
                 df[nc] = pd.to_numeric(df[nc], errors='coerce').fillna(0)
-
-            # 6. Fecha
+            
+            # 6. Convertir fecha
             df['date'] = pd.to_datetime(df['date'], errors='coerce')
-
+            
             return provs, df
-        except:
+        except: 
             return [], pd.DataFrame()
+    # -------------------------------------------------------------
 
     providers, df = load_data()
+    # Mapa de teléfonos para WhatsApp
     phone_map = {p['name']: p.get('phone', '') for p in providers}
 
-    # --- CÁLCULO DE ALERTAS (INDENTACIÓN CORREGIDA) ---
+    # --- CÁLCULO DE ALERTAS GLOBALES ---
     urgent = 0; warning = 0
     if not df.empty:
         # Lógica: Último KM reportado vs Mantenimientos pendientes
@@ -186,9 +209,11 @@ else:
     st.sidebar.markdown("<h1 style='text-align: center;'>Itaro</h1>", unsafe_allow_html=True)
     st.sidebar.caption(f"Usuario: {u['name']}")
 
-    if urgent > 0: st.error(f"🚨 ALERTA CRÍTICA: Tienes {urgent} mantenimientos VENCIDOS.")
+    # ALERTAS VISUALES ARRIBA DE TODO
+    if urgent > 0: st.error(f"🚨 ALERTA CRÍTICA: Tienes {urgent} mantenimientos VENCIDOS. Revisa 'Reportes'.")
     elif warning > 0: st.warning(f"⚠️ AVISO: Tienes {warning} mantenimientos próximos.")
 
+    # Botón Respaldo
     if not df.empty:
         csv = df.to_csv(index=False).encode('utf-8')
         st.sidebar.download_button("📥 Descargar Respaldo", csv, "itaro_backup.csv", "text/csv")
@@ -197,7 +222,7 @@ else:
     if u['role'] == 'owner': menu.append("👥 Personal")
     choice = st.sidebar.radio("Navegación", menu)
 
-    # --- 1. PERSONAL ---
+    # --- 1. PERSONAL (COMPLETO CON CÉDULA/TEL) ---
     if choice == "👥 Personal":
         st.header("Gestión de Personal")
         with st.expander("➕ Agregar Conductor", expanded=True):
@@ -208,6 +233,7 @@ else:
                 if st.form_submit_button("Guardar") and db and nm:
                     FLEETS_REF.document(u['fleet']).collection("authorized_users").document(nm).set({"active":True,"cedula":ce,"phone":te,"date":datetime.now().isoformat()})
                     st.success("Guardado"); st.rerun()
+        
         if db:
             st.write("### Nómina Activa")
             for us in FLEETS_REF.document(u['fleet']).collection("authorized_users").stream():
@@ -223,16 +249,17 @@ else:
                         if c4.button("🗑️", key=f"d{us.id}"):
                              FLEETS_REF.document(u['fleet']).collection("authorized_users").document(us.id).delete(); st.rerun()
 
-    # --- 2. REPORTES (CORREGIDO KEYERROR) ---
+    # --- 2. REPORTES (FILTRO JERÁRQUICO) ---
     elif choice == "📊 Reportes":
         st.header("Reportes de Flota")
+        
         tab1, tab2 = st.tabs(["🚦 Semáforo", "📜 Historial Detallado"])
         
+        # TAB 1: Semáforo
         with tab1:
             if not df.empty:
                 last_km = df.sort_values('date').groupby('bus')['km_current'].last()
                 mview = df[df['km_next'] > 0].sort_values('date', ascending=False).drop_duplicates(subset=['bus', 'category']).copy()
-                
                 rep = []
                 for _, r in mview.iterrows():
                     ckm = last_km.get(r['bus'], 0)
@@ -240,16 +267,14 @@ else:
                     stt = "🔴 VENCIDO" if dff < 0 else "🟡 PRÓXIMO" if dff <= 500 else "🟢 OK"
                     rep.append({"Estado": stt, "Bus": r['bus'], "Item": r['category'], "KM Actual": ckm, "Meta": r['km_next']})
                 
-                # --- CORRECCIÓN: Crear DF vacío con columnas si no hay datos ---
                 if not rep:
+                    # Crear DF vacío con columnas para evitar error
                     rdf = pd.DataFrame(columns=["Estado", "Bus", "Item", "KM Actual", "Meta"])
                 else:
                     rdf = pd.DataFrame(rep)
-                # -------------------------------------------------------------
 
                 fil = st.radio("Filtro Rápido:", ["Todos", "🔴 Vencidos", "🟡 Próximos"], horizontal=True)
                 
-                # Filtrar solo si el DF no está vacío
                 if not rdf.empty:
                     if fil == "🔴 Vencidos": rdf = rdf[rdf['Estado']=="🔴 VENCIDO"]
                     if fil == "🟡 Próximos": rdf = rdf[rdf['Estado']=="🟡 PRÓXIMO"]
@@ -257,27 +282,35 @@ else:
                 st.dataframe(rdf, hide_index=True, use_container_width=True)
             else: st.info("Sin datos.")
 
+        # TAB 2: Historial Filtrado
         with tab2:
             if df.empty:
                 st.info("Sin registros.")
             else:
                 c1, c2 = st.columns(2)
+                # Filtros
                 unidades = ["Todas"] + sorted(df['bus'].unique().tolist())
                 sel_bus = c1.selectbox("1. Unidad", unidades)
+                
                 categorias = ["Todas"] + sorted(df['category'].unique().tolist())
                 sel_cat = c2.selectbox("2. Categoría", categorias)
                 
+                # Aplicar
                 df_fil = df.copy()
                 if sel_bus != "Todas": df_fil = df_fil[df_fil['bus'] == sel_bus]
                 if sel_cat != "Todas": df_fil = df_fil[df_fil['category'] == sel_cat]
+                
                 st.divider()
+                
                 if not df_fil.empty:
+                    # Métricas
                     total = df_fil['mec_cost'].sum() + df_fil['com_cost'].sum()
                     st.markdown(f"<div class='metric-box'>💰 Gasto Total Selección: <b>${total:,.2f}</b></div>", unsafe_allow_html=True)
+                    st.write("")
                     st.dataframe(df_fil[['date', 'bus', 'category', 'observations', 'km_current', 'mec_cost', 'com_cost']].sort_values('date', ascending=False), hide_index=True, use_container_width=True)
                 else: st.warning("No hay registros con esos filtros.")
 
-    # --- 3. CONTABILIDAD ---
+    # --- 3. CONTABILIDAD (WHATSAPP) ---
     elif choice == "💰 Contabilidad":
         st.header("Cuentas por Pagar")
         if u['role'] == 'owner' and not df.empty:
@@ -314,7 +347,7 @@ else:
                             msg = f"Abono ${v} - Repuestos {r['category']}"
                             c2.markdown(f"[📱 Enviar Comprobante]({f'https://wa.me/{tel}?text={urllib.parse.quote(msg)}'})")
 
-    # --- 4. TALLER ---
+    # --- 4. TALLER (SINCRONIZADO + OBS) ---
     elif choice == "🛠️ Taller":
         st.header("Mantenimiento")
         mecs = [p['name'] for p in providers if p['type'] == "Mecánico"]
@@ -331,6 +364,7 @@ else:
             
             st.divider()
             c3, c4 = st.columns(2)
+            
             mn = c3.selectbox("Mecánico", ["N/A"] + mecs)
             mc = c3.number_input("Costo M.O. ($)", min_value=0.0)
             mp = c3.number_input("Abono Hoy M.O. ($)", min_value=0.0)
@@ -340,7 +374,8 @@ else:
             cp = c4.number_input("Abono Hoy Rep. ($)", min_value=0.0)
             
             if st.form_submit_button("GUARDAR"):
-                if mp > mc or cp > rc: st.error("⚠️ Error: El abono no puede superar el costo.")
+                if mp > mc or cp > rc:
+                    st.error("⚠️ Error: El abono no puede superar el costo.")
                 elif db:
                     DATA_REF.collection("logs").add({
                         "fleetId": u['fleet'], "bus": u['bus'], "date": datetime.now().isoformat(),
@@ -352,7 +387,7 @@ else:
                     st.success("Guardado."); time.sleep(1); st.rerun()
                 else: st.error("Offline")
 
-    # --- 5. DIRECTORIO ---
+    # --- 5. DIRECTORIO (WHATSAPP) ---
     elif choice == "🏢 Directorio":
         st.header("Proveedores")
         with st.expander("➕ Nuevo"):
@@ -367,7 +402,7 @@ else:
                     ph = p.get('phone', '').replace('+', '').strip()
                     if ph: c2.markdown(f'''<a href="https://wa.me/{ph}" target="_blank">WhatsApp</a>''', unsafe_allow_html=True)
 
-    # --- 6. RADAR Y GAS ---
+    # --- 6. RADAR & GAS ---
     elif choice == "🏠 Radar":
         st.subheader("Radar de Flota")
         for b in sorted(df['bus'].unique()) if u['role']=='owner' else [u['bus']]:
@@ -375,12 +410,14 @@ else:
             if not b_df.empty:
                 lat = b_df.iloc[0]
                 d = (datetime.now()-lat['date']).days
+                # Semáforo
                 clr = "green"; msg = "OK"
                 maint = b_df[b_df['km_next'] > 0]
                 if not maint.empty:
                     diff = maint.iloc[0]['km_next'] - lat['km_current']
                     if diff < 0: clr = "red"; msg = "VENCIDO"
                     elif diff <= 500: clr = "orange"; msg = "PRÓXIMO"
+
                 with st.container(border=True):
                     c1,c2,c3=st.columns(3)
                     c1.write(f"**Unidad {b}**")
