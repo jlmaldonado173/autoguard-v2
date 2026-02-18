@@ -146,18 +146,18 @@ if 'user' not in st.session_state:
 # --- 5. SISTEMA OPERATIVO ---
 else:
     u = st.session_state.user
-    # --- CARGA DE DATOS CORREGIDA (Sin KeyError y con sangría exacta) ---
-    def load_data():
-        if not db: 
-            return [], pd.DataFrame()
-        try:
-            # Cargar proveedores
-            p_docs = DATA_REF.collection("providers").where("fleetId", "==", u['fleet']).stream()
-            provs = [p.to_dict() | {"id": p.id} for p in p_docs]
+# --- CARGA DE DATOS CORREGIDA (Sin KeyError y con sangría exacta) ---
+ def load_data():
+     if not db: 
+         return [], pd.DataFrame()
+     try:
+          # Cargar proveedores
+        p_docs = DATA_REF.collection("providers").where("fleetId", "==", u['fleet']).stream()
+        provs = [p.to_dict() | {"id": p.id} for p in p_docs]
             
-            # Consultar logs según rol
-            q = DATA_REF.collection("logs").where("fleetId", "==", u['fleet'])
-            if u['role'] == 'driver': 
+         # Consultar logs según rol
+          q = DATA_REF.collection("logs").where("fleetId", "==", u['fleet'])
+          if u['role'] == 'driver': 
                 q = q.where("bus", "==", u['bus'])
             
             logs = [l.to_dict() | {"id": l.id} for l in q.stream()]
