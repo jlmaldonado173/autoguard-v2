@@ -147,29 +147,46 @@ if 'user' not in st.session_state:
 else:
     u = st.session_state.user
     
-    # Carga de datos unificada
-    def load_data():
-        if not db: return [], pd.DataFrame()
-        try:
-            p_docs = DATA_REF.collection("providers").where("fleetId", "==", u['fleet']).stream()
-            provs = [p.to_dict() | {"id": p.id} for p in p_docs]
-            q = DATA_REF.collection("logs").where("fleetId", "==", u['fleet'])
-            if u['role'] == 'driver': q = q.where("bus", "==", u['bus'])
-            logs = [l.to_dict() | {"id": l.id} for l in q.stream()]
-            df = pd.DataFrame(logs)
-            cols = ['bus', 'category', 'observations', 'km_current', 'km_next', 'date', 'mec_cost', 'com_cost', 'mec_paid', 'com_paid']
-            if df.empty: df = pd.DataFrame(columns=cols)
-            for c in cols: 
-                if c not in df.columns: df[c] = "" if c == 'observations' else 0 
-            for nc in ['km_current', 'km_next', 'mec_cost', 'com_cost', 'mec_paid', 'com_paid']:
-                df[nc] = pd.to_numeric(df[nc], errors='coerce').fillna(0)
-            df['date'] = pd.to_datetime(df['date'], errors='coerce')
-            return provs, df
-        except: return [], pd.DataFrame()
+# --- REEMPLAZA TU FUNCIÓN DE CARGA O EL BLOQUE DONDE CREAS EL DF POR ESTE ---
 
-    providers, df = load_data()
-    # Mapa de teléfonos para WhatsApp
-    phone_map = {p['name']: p.get('phone', '') for p in providers}
+def get_safe_data():
+    # 1. Definir columnas obligatorias para que NUNCA falten (evita KeyError)
+    columns_base = [
+        'bus', 'category', 'km_current', 'km_next', 
+        'mec_cost', 'mec_paid', 'com_cost', 'com_paid', 
+        'date', 'mec_name', 'com_name'
+    ]
+    
+    # 2. Obtener datos de Firebase
+    query = DATA_REF.collection("logs").where("fleetId", "==", u['fleet'])
+    if u['role'] == 'driver': 
+        query = query.where("bus", "==", u['bus'])
+    
+    logs_raw = [l.to_dict() | {"id": l.id} for l in query.stream()]
+    
+    # 3. Si no hay datos, devolver DataFrame con columnas vacías pero existentes
+    if not logs_raw:
+        return pd.DataFrame(columns=columns_base)
+    
+    df = pd.DataFrame(logs_raw)
+    
+    # 4. ASEGURAR COLUMNAS: Si falta alguna en Firebase, la crea con valor 0
+    for col in columns_base:
+        if col not in df.columns:
+            df[col] = 0
+            
+    # 5. CONVERSIÓN SEGURA A NÚMEROS (Evita errores de cálculo)
+    num_cols = ['km_current', 'km_next', 'mec_cost', 'mec_paid', 'com_cost', 'com_paid']
+    for nc in num_cols:
+        df[nc] = pd.to_numeric(df[nc], errors='coerce').fillna(0)
+    
+    # 6. CONVERSIÓN DE FECHA
+    df['date'] = pd.to_datetime(df['date'], errors='coerce')
+    
+    return df
+
+# Luego lo usas así para que no falle el cálculo:
+df_main = get_safe_data()
 
     # --- CÁLCULO DE ALERTAS GLOBALES ---
     urgent = 0; warning = 0
