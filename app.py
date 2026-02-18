@@ -5,23 +5,15 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 from google.api_core.exceptions import FailedPrecondition
 import google.generativeai as genai
-import json
 import time
 import urllib.parse
-# --- CONFIGURACIÓN DE IA (GEMINI) ---
-# Intentamos obtener la clave desde los Secretos de Streamlit
-try:
-    if "GEMINI_KEY" in st.secrets:
-        # Aquí es donde ocurría el error: usamos st.secrets directamente
-        genai.configure(api_key=st.secrets["GEMINI_KEY"]["api_key"])
-        HAS_AI = True
-    else:
-        HAS_AI = False
-        st.warning("⚠️ Falta configurar la API Key en los Secretos.")
-except Exception as e:
-    HAS_AI = False
-    st.error(f"Error configurando IA: {e}")
 
+# --- 1. CONFIGURACIÓN Y ESTILOS ---
+APP_CONFIG = {
+    "APP_ID": "itero-titanium-v15",
+    "MASTER_KEY": "ADMIN123",
+    "VERSION": "5.0.0 Stable"
+}
 
 UI_COLORS = {
     "primary": "#1E1E1E",
@@ -53,16 +45,27 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. CAPA DE DATOS (BACKEND) ---
+# --- 2. CONFIGURACIÓN DE IA (GEMINI) ---
+try:
+    if "GEMINI_KEY" in st.secrets:
+        genai.configure(api_key=st.secrets["GEMINI_KEY"]["api_key"])
+        HAS_AI = True
+    else:
+        HAS_AI = False
+        # No mostramos error, solo desactivamos la IA silenciosamente
+except Exception as e:
+    HAS_AI = False
+    st.error(f"Error configurando IA: {e}")
+
+# --- 3. CAPA DE DATOS (BACKEND BLINDADO) ---
 
 @st.cache_resource
 def get_db_client():
     try:
-        # Evitamos inicializar dos veces si ya existe
+        # Evitamos inicializar dos veces
         if not firebase_admin._apps:
-            # Verificamos si existe la clave en los Secretos
             if "FIREBASE_JSON" in st.secrets:
-                # CORRECCIÓN IMPORTANTE: Usamos dict() para leer el secreto correctamente
+                # CORRECCIÓN: Usamos dict() para leer los secretos correctamente
                 key_dict = dict(st.secrets["FIREBASE_JSON"])
                 cred = credentials.Certificate(key_dict)
                 firebase_admin.initialize_app(cred)
@@ -73,9 +76,8 @@ def get_db_client():
         st.error(f"Error de conexión DB: {e}")
         return None
 
-# --- ESTA ES LA LÍNEA QUE TE FALTABA ---
+# Inicializamos la DB aquí para que esté disponible globalmente
 db = get_db_client()
-# ---------------------------------------
 
 def get_refs():
     if db:
@@ -87,7 +89,36 @@ def get_refs():
 
 REFS = get_refs()
 
-# --- CARGA DE DATOS OPTIMIZADA ---
+# --- FUNCIONES DE IA Y DATOS ---
+
+def get_ai_analysis(df_bus, bus_id):
+    """Analiza el historial del bus usando Google Gemini."""
+    if not HAS_AI: return "⚠️ IA no disponible (Configura el Secreto GEMINI_KEY)."
+    
+    try:
+        # Resumen para ahorrar tokens
+        summary = df_bus[['date', 'category', 'observations', 'km_current', 'mec_cost', 'com_cost']].head(15).to_string()
+        
+        prompt = f"""
+        Eres 'Itaro Copilot', un ingeniero mecánico experto y auditor.
+        Analiza estos registros recientes del BUS {bus_id}:
+        {summary}
+        
+        Tu tarea:
+        1. Identifica patrones de fallo.
+        2. Detecta costos sospechosos.
+        3. Da una recomendación técnica corta.
+        
+        Responde en 3 puntos breves con emojis.
+        """
+        
+        # CORRECCIÓN: Usamos el modelo más nuevo disponible
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"Error consultando al oráculo digital: {str(e)}"
+
 @st.cache_data(ttl=300)
 def fetch_fleet_data(fleet_id: str, role: str, bus_id: str, start_d: date, end_d: date):
     if not REFS: return [], pd.DataFrame()
@@ -133,7 +164,7 @@ def fetch_fleet_data(fleet_id: str, role: str, bus_id: str, start_d: date, end_d
         st.error(f"Error procesando datos: {e}")
         return [], pd.DataFrame()
 
-# --- 3. FUNCIONES DE UI ---
+# --- 4. UI LOGIN Y REGISTRO ---
 
 def ui_render_login():
     st.markdown('<div class="main-title">Itaro AI</div>', unsafe_allow_html=True)
@@ -206,42 +237,28 @@ def render_super_admin():
             if c2.button("ELIMINAR DATOS", key=f"d_{f.id}"):
                 REFS["fleets"].document(f.id).delete(); st.rerun()
 
-# --- 4. MÓDULOS PRINCIPALES ---
+# --- 5. VISTAS PRINCIPALES ---
 
 def render_radar(df, user):
-    """
-    Vista Inteligente: 
-    - Conductores: Ven un 'Cockpit' simplificado con alertas grandes y botón a WhatsApp.
-    - Dueños: Ven el grid completo y pueden activar la IA por bus.
-    """
     st.subheader("📡 Centro de Control")
     
-    # --- CORRECCIÓN ANTI-ERROR (KeyError) ---
-    # Si el índice se está creando o no hay datos, df vendrá vacío o sin columnas.
+    # CORRECCIÓN ANTI-ERROR: Si no hay datos, mostramos aviso y salimos
     if df.empty or 'bus' not in df.columns:
-        st.info("⏳ Esperando datos... (Si acabas de crear el índice, espera unos minutos).")
+        st.info("⏳ Esperando datos... (Si es tu primera vez, asegúrate de haber creado el índice en el enlace de arriba).")
         return
-    # ----------------------------------------
 
     buses = sorted(df['bus'].unique()) if user['role']=='owner' else [user['bus']]
     
-    # ... (el resto del código sigue igual)
-
-    if not buses: 
-        st.info("Sin datos recientes. Amplía el rango de fechas.")
-        return
-
-    # --- VISTA CONDUCTOR (COCKPIT) ---
+    # --- VISTA CONDUCTOR ---
     if user['role'] == 'driver':
         bus = user['bus']
         bus_df = df[df['bus'] == bus].sort_values('date', ascending=False)
         
-        if bus_df.empty: st.warning("Tu unidad no tiene historial."); return
+        if bus_df.empty: st.warning("Tu unidad no tiene historial reciente."); return
         
         latest = bus_df.iloc[0]
         pending = bus_df[bus_df['km_next'] > 0]
         
-        # Estado por defecto
         alert_msg = "✅ UNIDAD OPERATIVA"; alert_color = "#28a745"; whatsapp_msg = ""
         
         if not pending.empty:
@@ -250,12 +267,11 @@ def render_radar(df, user):
             
             if diff < 0:
                 alert_msg = f"🚨 VENCIDO: {next_maint['category']}"; alert_color = "#dc3545"
-                whatsapp_msg = f"Hola Jefe, reporto que mi unidad {bus} tiene VENCIDO el mantenimiento de {next_maint['category']} hace {abs(diff)} km. Necesito taller."
+                whatsapp_msg = f"Hola Jefe, reporto que mi unidad {bus} tiene VENCIDO el mantenimiento de {next_maint['category']} hace {abs(diff)} km."
             elif diff <= 500:
                 alert_msg = f"⚠️ PRÓXIMO: {next_maint['category']}"; alert_color = "#ffc107"
                 whatsapp_msg = f"Hola Jefe, aviso que al Bus {bus} le toca {next_maint['category']} en {diff} km."
 
-        # Tarjeta Visual
         st.markdown(f"""
         <div class="driver-card" style="background-color:{alert_color};">
             <h1 style="margin:0;">BUS {bus}</h1>
@@ -264,24 +280,21 @@ def render_radar(df, user):
         </div>
         """, unsafe_allow_html=True)
 
-        # Botón de Notificación
         if whatsapp_msg:
-            # Reemplazar con el número real del dueño si estuviera en la DB
-            boss_phone = "593999999999" 
+            boss_phone = "593999999999" # Debería venir de la DB idealmente
             link = f"https://wa.me/{boss_phone}?text={urllib.parse.quote(whatsapp_msg)}"
             st.markdown(f'''<a href="{link}" target="_blank">
                 <button style="background-color:#25D366; color:white; border:none; padding:15px; width:100%; font-size:20px; font-weight:bold; border-radius:10px; cursor:pointer; margin-bottom:20px;">
-                📲 NOTIFICAR AL JEFE POR WHATSAPP
+                📲 NOTIFICAR AL JEFE
                 </button></a>''', unsafe_allow_html=True)
         
-        # Botón IA
         if st.button("🤖 CONSULTAR A ITARO COPILOT"):
-            with st.spinner("Analizando motor y finanzas..."):
+            with st.spinner("Analizando..."):
                 analysis = get_ai_analysis(bus_df, bus)
                 st.info(analysis)
         return
 
-    # --- VISTA DUEÑO (GRID) ---
+    # --- VISTA DUEÑO ---
     cols = st.columns(3)
     for i, bus in enumerate(buses):
         with cols[i % 3]:
@@ -303,16 +316,16 @@ def render_radar(df, user):
                 c2.markdown(f"<span style='color:{status_color}; font-weight:bold'>{status_text}</span>", unsafe_allow_html=True)
                 st.caption(f"KM: {latest['km_current']:,.0f}")
                 
-                if st.button(f"🤖 IA", key=f"ai_{bus}", help="Analizar unidad con IA"):
+                if st.button(f"🤖 IA", key=f"ai_{bus}"):
                      with st.spinner("Consultando..."):
                         res = get_ai_analysis(bus_df, bus)
                         st.info(res)
 
 def render_reports(df):
-    st.header("Reportes de Flota")
+    st.header("Reportes")
     if df.empty: st.warning("No hay datos."); return
 
-    t1, t2 = st.tabs(["🚦 Estado Actual", "📜 Historial Económico"])
+    t1, t2 = st.tabs(["🚦 Estado Actual", "📜 Historial"])
     
     with t1:
         last_km = df.sort_values('date').groupby('bus')['km_current'].last()
@@ -334,18 +347,16 @@ def render_reports(df):
 
     with t2:
         c1, c2 = st.columns(2)
-        sel_bus = c1.selectbox("Filtrar Unidad", ["Todas"] + sorted(df['bus'].unique().tolist()))
-        sel_cat = c2.selectbox("Filtrar Categoría", ["Todas"] + sorted(df['category'].unique().tolist()))
+        sel_bus = c1.selectbox("Bus", ["Todas"] + sorted(df['bus'].unique().tolist()))
+        sel_cat = c2.selectbox("Categoría", ["Todas"] + sorted(df['category'].unique().tolist()))
         
         df_fil = df.copy()
         if sel_bus != "Todas": df_fil = df_fil[df_fil['bus'] == sel_bus]
         if sel_cat != "Todas": df_fil = df_fil[df_fil['category'] == sel_cat]
         
         m1, m2 = st.columns(2)
-        total_mec = df_fil['mec_cost'].sum()
-        total_rep = df_fil['com_cost'].sum()
-        
-        m1.metric("Total Mantenimiento", f"${total_mec + total_rep:,.2f}")
+        total = df_fil['mec_cost'].sum() + df_fil['com_cost'].sum()
+        m1.metric("Gasto Total", f"${total:,.2f}")
         st.dataframe(df_fil[['date', 'bus', 'category', 'observations', 'mec_cost', 'com_cost']].sort_values('date', ascending=False), use_container_width=True, hide_index=True)
 
 def render_accounting(df, user, phone_map):
@@ -424,17 +435,14 @@ def render_fuel():
             st.success("Ok"); st.rerun()
 
 def render_personnel(user):
-    st.header("Gestión de Personal")
-    # Formulario de Crear
-    with st.expander("➕ Agregar Conductor", expanded=False):
+    st.header("Personal")
+    with st.expander("➕ Agregar", expanded=False):
         with st.form("nd"):
             c1,c2,c3=st.columns(3)
             nm=c1.text_input("Nombre").upper().strip(); ce=c2.text_input("Cédula"); te=c3.text_input("Teléfono")
             if st.form_submit_button("Guardar") and REFS and nm:
                 REFS["fleets"].document(user['fleet']).collection("authorized_users").document(nm).set({"active":True,"cedula":ce,"phone":te})
-                st.success("Guardado"); time.sleep(0.5); st.rerun()
-    
-    # Lista de Personal
+                st.rerun()
     if REFS:
         st.write("### Nómina")
         for us in REFS["fleets"].document(user['fleet']).collection("authorized_users").stream():
@@ -444,19 +452,12 @@ def render_personnel(user):
                     c1,c2,c3 = st.columns([3,1,1])
                     status = "🟢" if d.get('active') else "🔴"
                     c1.markdown(f"**{us.id}** {status}\n<small>🆔{d.get('cedula','-')} 📞{d.get('phone','-')}</small>", unsafe_allow_html=True)
-                    
-                    # Botón Bloquear
-                    if c2.button("🔒", key=f"lk_{us.id}", help="Bloquear/Desbloquear acceso"):
-                        REFS["fleets"].document(user['fleet']).collection("authorized_users").document(us.id).update({"active":not d.get('active')})
-                        st.rerun()
-                    
-                    # Botón Eliminar (RECUPERADO)
-                    if c3.button("🗑️", key=f"dl_{us.id}", help="Eliminar definitivamente"):
-                        REFS["fleets"].document(user['fleet']).collection("authorized_users").document(us.id).delete()
-                        st.rerun()
+                    if c2.button("🔒", key=f"lk_{us.id}"):
+                        REFS["fleets"].document(user['fleet']).collection("authorized_users").document(us.id).update({"active":not d.get('active')}); st.rerun()
+                    if c3.button("🗑️", key=f"dl_{us.id}"):
+                        REFS["fleets"].document(user['fleet']).collection("authorized_users").document(us.id).delete(); st.rerun()
 
-
-# --- 5. MAIN LOOP ---
+# --- 6. PROGRAMA PRINCIPAL ---
 def main():
     if 'user' not in st.session_state:
         params = st.query_params
@@ -481,7 +482,7 @@ def main():
         phone_map = {p['name']: p.get('phone', '') for p in providers}
 
         # Alertas Sidebar
-        if not df.empty:
+        if not df.empty and 'bus' in df.columns:
             last_km = df.sort_values('date').groupby('bus')['km_current'].last()
             pending = df[df['km_next'] > 0].sort_values('date', ascending=False).drop_duplicates(subset=['bus', 'category'])
             urg = sum(1 for _, r in pending.iterrows() if r['km_next'] - last_km.get(r['bus'],0) < 0)
@@ -497,19 +498,15 @@ def main():
             "🏢 Directorio": lambda: render_directory(providers, user)
         }
         if user['role']=='owner': menu["👥 Personal"] = lambda: render_personnel(user)
-                # --- RECUPERADO: BOTÓN DE RESPALDO ---
-        if not df.empty:
-            csv = df.to_csv(index=False).encode('utf-8')
-            st.sidebar.download_button(
-                label="📥 Descargar Data (CSV)",
-                data=csv,
-                file_name=f"itaro_backup_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv"
-            )
-
+        
         choice = st.sidebar.radio("Ir a:", list(menu.keys()))
         st.divider()
         menu[choice]()
+        
+        # Botón de Respaldo CSV
+        if not df.empty:
+            csv = df.to_csv(index=False).encode('utf-8')
+            st.sidebar.download_button("📥 Bajar CSV", csv, f"itaro_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
         
         st.sidebar.markdown("---")
         if st.sidebar.button("🚪 Salir"):
