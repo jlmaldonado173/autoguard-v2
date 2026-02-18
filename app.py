@@ -92,34 +92,41 @@ REFS = get_refs()
 # --- FUNCIONES DE IA Y DATOS ---
 
 def get_ai_analysis(df_bus, bus_id):
-    """Analiza el historial del bus usando Google Gemini."""
-    if not HAS_AI: return "⚠️ IA no disponible (Configura el Secreto GEMINI_KEY)."
+    """Analiza el historial usando IA con sistema de respaldo automático."""
+    if not HAS_AI: return "⚠️ IA no disponible (Revisa los Secretos)."
     
+    # Preparamos el texto una sola vez
     try:
-        # Resumen para ahorrar tokens
-        summary = df_bus[['date', 'category', 'observations', 'km_current', 'mec_cost', 'com_cost']].head(15).to_string()
-        
+        summary = df_bus[['date', 'category', 'observations', 'km_current']].head(15).to_string()
         prompt = f"""
-        Eres 'Itaro Copilot', un ingeniero mecánico experto y auditor.
-        Analiza estos registros recientes del BUS {bus_id}:
+        Actúa como jefe de taller experto. Analiza estos últimos registros del Bus {bus_id}:
         {summary}
         
-        Tu tarea:
-        1. Identifica patrones de fallo.
-        2. Detecta costos sospechosos.
-        3. Da una recomendación técnica corta.
-        
-        Responde en 3 puntos breves con emojis.
+        Dame 3 puntos breves con emojis:
+        1. Patrón de fallas (si lo hay).
+        2. Alerta de costos.
+        3. Recomendación urgente.
         """
-        
-        # CORRECCIÓN: Usamos el modelo más nuevo disponible
+    except Exception as e:
+        return "Error procesando datos para la IA."
+
+    # --- INTENTO 1: Modelo Rápido (Gemini 1.5 Flash) ---
+    try:
         model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(prompt)
         return response.text
-    except Exception as e:
-        return f"Error consultando al oráculo digital: {str(e)}"
+    except Exception:
+        # Si falla (Error 404), pasamos silenciosamente al plan B
+        pass
 
-@st.cache_data(ttl=300)
+    # --- INTENTO 2: Modelo Clásico (Gemini Pro) ---
+    try:
+        # Este modelo es más antiguo pero muy estable
+        model = genai.GenerativeModel('gemini-pro')
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"Error de IA: No se pudo conectar con ningún modelo. ({str(e)})"
 def fetch_fleet_data(fleet_id: str, role: str, bus_id: str, start_d: date, end_d: date):
     if not REFS: return [], pd.DataFrame()
     
