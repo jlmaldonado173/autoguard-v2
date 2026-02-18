@@ -440,21 +440,37 @@ def render_fuel():
             st.success("Ok"); st.rerun()
 
 def render_personnel(user):
-    st.header("Personal")
-    with st.form("nd"):
-        c1,c2,c3=st.columns(3)
-        nm=c1.text_input("Nombre"); ce=c2.text_input("Cédula"); te=c3.text_input("Teléfono")
-        if st.form_submit_button("Guardar") and REFS:
-            REFS["fleets"].document(user['fleet']).collection("authorized_users").document(nm.upper()).set({"active":True,"cedula":ce,"phone":te})
-            st.rerun()
+    st.header("Gestión de Personal")
+    # Formulario de Crear
+    with st.expander("➕ Agregar Conductor", expanded=False):
+        with st.form("nd"):
+            c1,c2,c3=st.columns(3)
+            nm=c1.text_input("Nombre").upper().strip(); ce=c2.text_input("Cédula"); te=c3.text_input("Teléfono")
+            if st.form_submit_button("Guardar") and REFS and nm:
+                REFS["fleets"].document(user['fleet']).collection("authorized_users").document(nm).set({"active":True,"cedula":ce,"phone":te})
+                st.success("Guardado"); time.sleep(0.5); st.rerun()
+    
+    # Lista de Personal
     if REFS:
+        st.write("### Nómina")
         for us in REFS["fleets"].document(user['fleet']).collection("authorized_users").stream():
             d=us.to_dict()
             if d.get('role')!='admin':
-                c1,c2=st.columns([4,1])
-                c1.write(f"{us.id} ({'Activo' if d.get('active') else 'Inactivo'})")
-                if c2.button("Bloq/Act", key=us.id):
-                    REFS["fleets"].document(user['fleet']).collection("authorized_users").document(us.id).update({"active":not d.get('active')}); st.rerun()
+                with st.container(border=True):
+                    c1,c2,c3 = st.columns([3,1,1])
+                    status = "🟢" if d.get('active') else "🔴"
+                    c1.markdown(f"**{us.id}** {status}\n<small>🆔{d.get('cedula','-')} 📞{d.get('phone','-')}</small>", unsafe_allow_html=True)
+                    
+                    # Botón Bloquear
+                    if c2.button("🔒", key=f"lk_{us.id}", help="Bloquear/Desbloquear acceso"):
+                        REFS["fleets"].document(user['fleet']).collection("authorized_users").document(us.id).update({"active":not d.get('active')})
+                        st.rerun()
+                    
+                    # Botón Eliminar (RECUPERADO)
+                    if c3.button("🗑️", key=f"dl_{us.id}", help="Eliminar definitivamente"):
+                        REFS["fleets"].document(user['fleet']).collection("authorized_users").document(us.id).delete()
+                        st.rerun()
+
 
 # --- 5. MAIN LOOP ---
 def main():
@@ -497,7 +513,16 @@ def main():
             "🏢 Directorio": lambda: render_directory(providers, user)
         }
         if user['role']=='owner': menu["👥 Personal"] = lambda: render_personnel(user)
-        
+                # --- RECUPERADO: BOTÓN DE RESPALDO ---
+        if not df.empty:
+            csv = df.to_csv(index=False).encode('utf-8')
+            st.sidebar.download_button(
+                label="📥 Descargar Data (CSV)",
+                data=csv,
+                file_name=f"itaro_backup_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv"
+            )
+
         choice = st.sidebar.radio("Ir a:", list(menu.keys()))
         st.divider()
         menu[choice]()
