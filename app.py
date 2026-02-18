@@ -107,7 +107,10 @@ def get_ai_analysis(df_bus, bus_id):
         Responde en 3 puntos breves con emojis. Tono profesional pero cercano.
         """
         
-        model = genai.GenerativeModel('gemini-pro')
+        # --- CAMBIO AQUÍ: Usamos el modelo más nuevo y estable ---
+        model = genai.GenerativeModel('gemini-1.5-flash') 
+        # --------------------------------------------------------
+        
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
