@@ -92,41 +92,51 @@ REFS = get_refs()
 # --- FUNCIONES DE IA Y DATOS ---
 
 def get_ai_analysis(df_bus, bus_id):
-    """Analiza el historial usando IA con sistema de respaldo automático."""
+    """
+    Analiza el historial usando IA.
+    SOLUCIÓN 404: Pregunta a la API qué modelos tiene disponibles antes de intentar usar uno.
+    """
     if not HAS_AI: return "⚠️ IA no disponible (Revisa los Secretos)."
     
-    # Preparamos el texto una sola vez
+    # 1. Preparar datos
     try:
-        summary = df_bus[['date', 'category', 'observations', 'km_current']].head(15).to_string()
+        summary = df_bus[['date', 'category', 'observations', 'km_current']].head(10).to_string()
         prompt = f"""
-        Actúa como jefe de taller experto. Analiza estos últimos registros del Bus {bus_id}:
+        Actúa como Jefe de Taller. Analiza estos datos del Bus {bus_id}:
         {summary}
-        
-        Dame 3 puntos breves con emojis:
-        1. Patrón de fallas (si lo hay).
-        2. Alerta de costos.
-        3. Recomendación urgente.
+        Dame 3 puntos breves (Fallas, Costos, Recomendación). Usa emojis.
         """
-    except Exception as e:
-        return "Error procesando datos para la IA."
-
-    # --- INTENTO 1: Modelo Rápido (Gemini 1.5 Flash) ---
-    try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content(prompt)
-        return response.text
     except Exception:
-        # Si falla (Error 404), pasamos silenciosamente al plan B
-        pass
+        return "Error al leer datos del bus."
 
-    # --- INTENTO 2: Modelo Clásico (Gemini Pro) ---
+    # 2. AUTODETECTAR MODELO (Magia para arreglar el Error 404)
     try:
-        # Este modelo es más antiguo pero muy estable
-        model = genai.GenerativeModel('gemini-pro')
+        # Buscamos modelos que sirvan para 'generateContent'
+        valid_models = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                valid_models.append(m.name)
+        
+        if not valid_models:
+            return "⚠️ Error crítico: Tu API Key es válida, pero Google no te ha habilitado ningún modelo (¿Restricción de región?)."
+
+        # Prioridad: Intentamos buscar Flash, luego Pro, si no, el primero que haya.
+        chosen_model = valid_models[0] # Por defecto el primero
+        
+        for m in valid_models:
+            if "flash" in m: chosen_model = m; break
+        if "flash" not in chosen_model:
+            for m in valid_models:
+                if "pro" in m: chosen_model = m; break
+
+        # Usamos el modelo que ENCONTRAMOS (no el que adivinamos)
+        model = genai.GenerativeModel(chosen_model)
         response = model.generate_content(prompt)
         return response.text
+
     except Exception as e:
-        return f"Error de IA: No se pudo conectar con ningún modelo. ({str(e)})"
+        return f"Error de conexión IA: {str(e)}"
+
 def fetch_fleet_data(fleet_id: str, role: str, bus_id: str, start_d: date, end_d: date):
     if not REFS: return [], pd.DataFrame()
     
