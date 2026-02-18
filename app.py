@@ -58,10 +58,11 @@ st.markdown(f"""
 @st.cache_resource
 def get_db_client():
     try:
+        # Evitamos inicializar dos veces si ya existe
         if not firebase_admin._apps:
-            # VERIFICACIÓN: Buscamos en Secrets
+            # Verificamos si existe la clave en los Secretos
             if "FIREBASE_JSON" in st.secrets:
-                # CORRECCIÓN: Usamos dict() directo. ¡NO json.loads!
+                # CORRECCIÓN IMPORTANTE: Usamos dict() para leer el secreto correctamente
                 key_dict = dict(st.secrets["FIREBASE_JSON"])
                 cred = credentials.Certificate(key_dict)
                 firebase_admin.initialize_app(cred)
@@ -72,8 +73,9 @@ def get_db_client():
         st.error(f"Error de conexión DB: {e}")
         return None
 
-
+# --- ESTA ES LA LÍNEA QUE TE FALTABA ---
 db = get_db_client()
+# ---------------------------------------
 
 def get_refs():
     if db:
@@ -84,38 +86,6 @@ def get_refs():
     return None
 
 REFS = get_refs()
-
-# --- INTELIGENCIA ARTIFICIAL (NUEVO) ---
-def get_ai_analysis(df_bus, bus_id):
-    """Analiza el historial del bus usando Google Gemini."""
-    if not HAS_AI: return "⚠️ IA no disponible (Falta API Key)."
-    
-    try:
-        # Resumen para ahorrar tokens
-        summary = df_bus[['date', 'category', 'observations', 'km_current', 'mec_cost', 'com_cost']].head(15).to_string()
-        
-        prompt = f"""
-        Eres 'Itaro Copilot', un ingeniero mecánico experto.
-        Analiza estos registros del BUS {bus_id}:
-        {summary}
-        
-        Tu tarea:
-        1. Identifica patrones de fallo.
-        2. Detecta costos sospechosos.
-        3. Da una recomendación corta.
-        
-        Responde en 3 puntos breves con emojis.
-        """
-        
-        # Intentamos usar el modelo más rápido y nuevo
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        
-        response = model.generate_content(prompt)
-        return response.text
-        
-    except Exception as e:
-        # Si falla, mostramos el error limpio
-        return f"Error de IA: {str(e)}"
 
 # --- CARGA DE DATOS OPTIMIZADA ---
 @st.cache_data(ttl=300)
