@@ -11,14 +11,27 @@ import urllib.parse
 
 # --- 1. CONFIGURACIÓN Y API KEYS ---
 APP_CONFIG = {
-    "APP_ID": "itero-titanium-v15",
+    "APP_ID": "itero",
     "MASTER_KEY": "ADMIN123",
     "VERSION": "4.0.0 AI-Powered"
 }
 
 # --- CONFIGURACIÓN DE IA (GEMINI) ---
-# ⚠️ ADVERTENCIA: Esta clave está hardcodeada. No subir a repositorios públicos.
-GEMINI_API_KEY = "AIzaSyBJsijDPm6gu4sRO2IJoITm1hZm7rPdTT0"
+import google.generativeai as genai
+
+# Intentamos obtener la clave desde los Secretos de Streamlit
+try:
+    if "GEMINI_KEY" in st.secrets:
+        # Esto busca en la bóveda segura de la nube
+        genai.configure(api_key=st.secrets["GEMINI_KEY"]["api_key"])
+        HAS_AI = True
+    else:
+        # Por si acaso alguien lo corre local sin configurar
+        HAS_AI = False
+        st.warning("⚠️ Falta configurar la API Key en los Secretos.")
+except Exception as e:
+    HAS_AI = False
+    st.error(f"Error configurando IA: {e}")
 
 try:
     genai.configure(api_key=GEMINI_API_KEY)
