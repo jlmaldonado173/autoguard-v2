@@ -146,61 +146,51 @@ if 'user' not in st.session_state:
 # --- 5. SISTEMA OPERATIVO ---
 else:
     u = st.session_state.user
-# --- CARGA DE DATOS CORREGIDA (Sin KeyError y con sangría exacta) ---
- def load_data():
-     if not db: 
-         return [], pd.DataFrame()
-     try:
-          # Cargar proveedores
-        p_docs = DATA_REF.collection("providers").where("fleetId", "==", u['fleet']).stream()
-        provs = [p.to_dict() | {"id": p.id} for p in p_docs]
+    
+    # -------------------------------------------------------------
+    # --- FUNCIÓN DE CARGA BLINDADA (SIN KEYERROR) ---
+    # -------------------------------------------------------------
+    def load_data():
+        if not db: return [], pd.DataFrame()
+        try:
+            # 1. Cargar Proveedores
+            p_docs = DATA_REF.collection("providers").where("fleetId", "==", u['fleet']).stream()
+            provs = [p.to_dict() | {"id": p.id} for p in p_docs]
             
-         # Consultar logs según rol
-          q = DATA_REF.collection("logs").where("fleetId", "==", u['fleet'])
-          if u['role'] == 'driver': 
+            # 2. Cargar Logs
+            q = DATA_REF.collection("logs").where("fleetId", "==", u['fleet'])
+            if u['role'] == 'driver': 
                 q = q.where("bus", "==", u['bus'])
-            
             logs = [l.to_dict() | {"id": l.id} for l in q.stream()]
             
-            # Columnas obligatorias para evitar fallos en Radar y Semáforo
-            cols = ['bus', 'category', 'observations', 'km_current', 'km_next', 'date', 'mec_cost', 'com_cost', 'mec_paid', 'com_paid']
+            # 3. Columnas obligatorias
+            cols = ['bus', 'category', 'observations', 'km_current', 'km_next', 'date', 'mec_cost', 'com_cost', 'mec_paid', 'com_paid', 'gallons']
             
             if not logs:
                 return provs, pd.DataFrame(columns=cols)
             
             df = pd.DataFrame(logs)
             
-            # Asegurar que existan todas las columnas necesarias
-            for c in cols:
-                if c not in df.columns:
-                    df[c] = "" if c in ['observations', 'bus', 'category'] else 0
+            # 4. Rellenar faltantes
+            for c in cols: 
+                if c not in df.columns: 
+                    df[c] = "" if c == 'observations' else 0 
             
-            # Limpieza y conversión de tipos
-            for nc in ['km_current', 'km_next', 'mec_cost', 'com_cost', 'mec_paid', 'com_paid']:
+            # 5. Convertir a números
+            for nc in ['km_current', 'km_next', 'mec_cost', 'com_cost', 'mec_paid', 'com_paid', 'gallons']:
                 df[nc] = pd.to_numeric(df[nc], errors='coerce').fillna(0)
             
+            # 6. Convertir fecha
             df['date'] = pd.to_datetime(df['date'], errors='coerce')
             
             return provs, df
-        except Exception as e:
-            # Si algo falla, devolvemos estructura vacía para no romper la app
-            return [], pd.DataFrame(columns=['bus', 'category', 'km_current', 'km_next', 'date'])
+        except: 
+            return [], pd.DataFrame()
+    # -------------------------------------------------------------
 
-    # Ejecutar carga
     providers, df = load_data()
-
-    # 5. CONVERSIÓN SEGURA A NÚMEROS (Evita errores de cálculo)
-    num_cols = ['km_current', 'km_next', 'mec_cost', 'mec_paid', 'com_cost', 'com_paid']
-    for nc in num_cols:
-        df[nc] = pd.to_numeric(df[nc], errors='coerce').fillna(0)
-    
-    # 6. CONVERSIÓN DE FECHA
-    df['date'] = pd.to_datetime(df['date'], errors='coerce')
-    
-    return df
-
-# Luego lo usas así para que no falle el cálculo:
-df_main = get_safe_data()
+    # Mapa de teléfonos para WhatsApp
+    phone_map = {p['name']: p.get('phone', '') for p in providers}
 
     # --- CÁLCULO DE ALERTAS GLOBALES ---
     urgent = 0; warning = 0
@@ -219,7 +209,7 @@ df_main = get_safe_data()
     st.sidebar.markdown("<h1 style='text-align: center;'>Itaro</h1>", unsafe_allow_html=True)
     st.sidebar.caption(f"Usuario: {u['name']}")
 
-    # ALERTAS VISUALES ARRIBA DE TODO (Tu petición de alerta al ingresar)
+    # ALERTAS VISUALES ARRIBA DE TODO
     if urgent > 0: st.error(f"🚨 ALERTA CRÍTICA: Tienes {urgent} mantenimientos VENCIDOS. Revisa 'Reportes'.")
     elif warning > 0: st.warning(f"⚠️ AVISO: Tienes {warning} mantenimientos próximos.")
 
@@ -284,7 +274,7 @@ df_main = get_safe_data()
                 st.dataframe(rdf, hide_index=True, use_container_width=True)
             else: st.info("Sin datos.")
 
-        # TAB 2: Historial Filtrado (Tu requerimiento específico)
+        # TAB 2: Historial Filtrado
         with tab2:
             if df.empty:
                 st.info("Sin registros.")
@@ -336,7 +326,7 @@ df_main = get_safe_data()
                             DATA_REF.collection("logs").document(r['id']).update({"mec_paid": firestore.Increment(v)})
                             tel = phone_map.get(r.get('mec_name'), '')
                             msg = f"Abono ${v} - {r['category']}"
-                            c1.markdown(f"[📲 Enviar Comprobante]({f'https://wa.me/{tel}?text={urllib.parse.quote(msg)}'})")
+                            c1.markdown(f"[📱 Enviar Comprobante]({f'https://wa.me/{tel}?text={urllib.parse.quote(msg)}'})")
 
                 dc = r['com_cost'] - r['com_paid']
                 if dc > 0:
@@ -347,7 +337,7 @@ df_main = get_safe_data()
                             DATA_REF.collection("logs").document(r['id']).update({"com_paid": firestore.Increment(v)})
                             tel = phone_map.get(r.get('com_name'), '')
                             msg = f"Abono ${v} - Repuestos {r['category']}"
-                            c2.markdown(f"[📲 Enviar Comprobante]({f'https://wa.me/{tel}?text={urllib.parse.quote(msg)}'})")
+                            c2.markdown(f"[📱 Enviar Comprobante]({f'https://wa.me/{tel}?text={urllib.parse.quote(msg)}'})")
 
     # --- 4. TALLER (SINCRONIZADO + OBS) ---
     elif choice == "🛠️ Taller":
