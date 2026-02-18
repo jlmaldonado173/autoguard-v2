@@ -1,32 +1,30 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta, date
 import firebase_admin
 from firebase_admin import credentials, firestore
+from google.api_core.exceptions import FailedPrecondition
 import json
 import time
 import urllib.parse
-from dataclasses import dataclass
-from typing import Optional, Dict, Any
 
 # --- 1. CONSTANTES Y CONFIGURACIÓN ---
 APP_CONFIG = {
     "APP_ID": "itero-titanium-v15",
     "MASTER_KEY": "ADMIN123",
-    "VERSION": "2.0.1 Refactored"
+    "VERSION": "3.0.0 Scalable"
 }
 
 UI_COLORS = {
     "primary": "#1E1E1E",
     "danger": "#FF4B4B",
-    "success": "green",
-    "warning": "orange",
-    "bg_metric": "#f0f2f6"
+    "success": "#28a745",
+    "warning": "#ffc107",
+    "bg_metric": "#f8f9fa"
 }
 
 st.set_page_config(page_title="Itaro Pro", layout="wide", page_icon="🚛")
 
-# Estilos CSS mejorados y centralizados
 st.markdown(f"""
     <style>
     .main-title {{ font-size: 60px; font-weight: 800; color: {UI_COLORS['primary']}; text-align: center; margin-top: -20px; }}
@@ -36,8 +34,10 @@ st.markdown(f"""
     }}
     .metric-box {{
         background-color: {UI_COLORS['bg_metric']}; border-left: 5px solid {UI_COLORS['primary']}; 
-        padding: 15px; border-radius: 5px; margin-bottom: 10px;
+        padding: 15px; border-radius: 5px; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }}
+    /* Mejoras visuales para tablas */
+    [data-testid="stDataFrame"] {{ border: 1px solid #eee; border-radius: 8px; overflow: hidden; }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -45,10 +45,8 @@ st.markdown(f"""
 
 @st.cache_resource
 def get_db_client():
-    """Inicializa la conexión a Firebase una sola vez (Singleton)."""
     try:
         if not firebase_admin._apps:
-            # Intenta cargar secretos, si falla, maneja modo offline
             if "FIREBASE_JSON" in st.secrets:
                 cred = credentials.Certificate(json.loads(st.secrets["FIREBASE_JSON"]))
                 firebase_admin.initialize_app(cred)
@@ -61,7 +59,6 @@ def get_db_client():
 
 db = get_db_client()
 
-# Referencias a colecciones (Lazy loading)
 def get_refs():
     if db:
         return {
@@ -72,24 +69,46 @@ def get_refs():
 
 REFS = get_refs()
 
-@st.cache_data(ttl=60) # Cachea los datos por 60 segundos para no saturar la DB
-def fetch_fleet_data(fleet_id: str, role: str, bus_id: str):
-    """Descarga y procesa datos. Retorna proveedores y DataFrame limpio."""
+# --- FUNCIÓN DE CARGA NIVEL DIOS (PAGINADA/FILTRADA) ---
+@st.cache_data(ttl=300) # Cache de 5 minutos
+def fetch_fleet_data(fleet_id: str, role: str, bus_id: str, start_d: date, end_d: date):
+    """
+    Descarga datos optimizados por fecha.
+    Maneja automáticamente la falta de índices en Firestore.
+    """
     if not REFS: return [], pd.DataFrame()
     
     try:
-        # 1. Cargar Proveedores
+        # 1. Proveedores (Siempre se cargan todos, son pocos)
         p_docs = REFS["data"].collection("providers").where("fleetId", "==", fleet_id).stream()
         provs = [p.to_dict() | {"id": p.id} for p in p_docs]
         
-        # 2. Cargar Logs (Optimizado: Podríamos agregar .limit(500) en el futuro)
-        query = REFS["data"].collection("logs").where("fleetId", "==", fleet_id)
-        if role == 'driver': 
-            query = query.where("bus", "==", bus_id)
-            
-        logs = [l.to_dict() | {"id": l.id} for l in query.stream()]
+        # 2. Construcción de Query de Logs con Fechas
+        # Convertir date a datetime para Firestore
+        dt_start = datetime.combine(start_d, datetime.min.time())
+        dt_end = datetime.combine(end_d, datetime.max.time())
+
+        base_query = REFS["data"].collection("logs").where("fleetId", "==", fleet_id)
         
-        # 3. Estructura de Datos
+        if role == 'driver': 
+            base_query = base_query.where("bus", "==", bus_id)
+            
+        # Aplicamos filtro de fecha (Esto requiere índice compuesto en Firestore)
+        query = base_query.where("date", ">=", dt_start.isoformat()).where("date", "<=", dt_end.isoformat())
+        
+        try:
+            logs = [l.to_dict() | {"id": l.id} for l in query.stream()]
+        except FailedPrecondition as e:
+            # Captura mágica de error de índice
+            if "query requires an index" in str(e):
+                url = str(e).split("here: ")[1].split(" ")[0] if "here: " in str(e) else ""
+                st.error("⚠️ RENDIMIENTO: Se requiere crear un índice en Firebase para optimizar esta consulta.")
+                if url: st.markdown(f"[👉 CLIC AQUÍ PARA CREAR ÍNDICE AUTOMÁTICAMENTE]({url})")
+                return provs, pd.DataFrame() # Retorna vacío hasta que se cree
+            else:
+                raise e
+
+        # 3. Data Cleaning
         cols_config = {
             'bus': '0', 'category': '', 'observations': '', 
             'km_current': 0, 'km_next': 0, 'mec_cost': 0, 
@@ -101,7 +120,6 @@ def fetch_fleet_data(fleet_id: str, role: str, bus_id: str):
         
         df = pd.DataFrame(logs)
         
-        # 4. Limpieza vectorizada (Más rápido que iterar)
         for col, default_val in cols_config.items():
             if col not in df.columns:
                 df[col] = default_val
@@ -115,7 +133,7 @@ def fetch_fleet_data(fleet_id: str, role: str, bus_id: str):
         st.error(f"Error procesando datos: {e}")
         return [], pd.DataFrame()
 
-# --- 3. COMPONENTES UI (FRONTEND) ---
+# --- 3. UI LOGIN Y REGISTRO ---
 
 def ui_render_login():
     st.markdown('<div class="main-title">Itaro</div>', unsafe_allow_html=True)
@@ -161,7 +179,6 @@ def handle_login(f_in, u_in, r_in, pass_in, b_in):
     access = False; role = ""
     
     if "Adm" in r_in:
-        # TODO: Implementar Hashing de contraseñas aquí en el futuro
         if data.get('password') == pass_in:
             access = True; role = 'owner'
         else: st.error("🔒 Contraseña incorrecta.")
@@ -198,7 +215,6 @@ def render_super_admin():
                 REFS["fleets"].document(f.id).update({"status": "suspended" if is_active else "active"})
                 st.rerun()
             if c2.button("ELIMINAR DATOS", key=f"d_{f.id}"):
-                # Aquí deberíamos borrar subcolecciones también, pero por seguridad solo borramos el doc padre
                 REFS["fleets"].document(f.id).delete()
                 st.rerun()
 
@@ -207,18 +223,32 @@ def render_super_admin():
 def main_app():
     user = st.session_state.user
     
-    # Carga de datos optimizada
-    providers, df = fetch_fleet_data(user['fleet'], user['role'], user['bus'])
-    phone_map = {p['name']: p.get('phone', '') for p in providers}
-
-    # Sidebar
+    # --- SIDEBAR MEJORADA ---
     st.sidebar.title("Itaro")
     st.sidebar.caption(f"Hola, {user['name']} ({user['role'].upper()})")
     
-    # Lógica de Alertas (Vectorizada para velocidad)
+    # 🌟 FILTRO DE FECHAS (NUEVO)
+    st.sidebar.markdown("### 📅 Rango de Datos")
+    # Por defecto últimos 90 días para que sea rápido
+    d_end = datetime.now().date()
+    d_start = d_end - timedelta(days=90)
+    
+    date_range = st.sidebar.date_input("Filtrar historia:", [d_start, d_end])
+    
+    # Manejo robusto del selector de fecha
+    if isinstance(date_range, tuple) and len(date_range) == 2:
+        start_date, end_date = date_range
+    else:
+        start_date, end_date = d_start, d_end # Fallback
+
+    # Carga de datos filtrada
+    providers, df = fetch_fleet_data(user['fleet'], user['role'], user['bus'], start_date, end_date)
+    phone_map = {p['name']: p.get('phone', '') for p in providers}
+
+    # ALERTAS GLOBALES (Sobre los datos cargados)
     urgent, warning = 0, 0
     if not df.empty:
-        # Optimización: Filtrar solo lo necesario antes de iterar
+        # Calcular alertas
         last_km = df.sort_values('date').groupby('bus')['km_current'].last()
         pending_maintenance = df[df['km_next'] > 0].sort_values('date', ascending=False).drop_duplicates(subset=['bus', 'category'])
         
@@ -228,10 +258,10 @@ def main_app():
             if diff < 0: urgent += 1
             elif diff <= 500: warning += 1
 
-    if urgent > 0: st.error(f"🚨 {urgent} MANTENIMIENTOS VENCIDOS")
-    elif warning > 0: st.warning(f"⚠️ {warning} MANTENIMIENTOS PRÓXIMOS")
+    if urgent > 0: st.sidebar.error(f"🚨 {urgent} VENCIDOS")
+    elif warning > 0: st.sidebar.warning(f"⚠️ {warning} PRÓXIMOS")
 
-    # Menú Dinámico
+    # MENÚ
     menu_options = {
         "⛽ Combustible": render_fuel,
         "🏠 Radar": lambda: render_radar(df, user),
@@ -246,8 +276,8 @@ def main_app():
 
     choice = st.sidebar.radio("Navegación", list(menu_options.keys()))
     
-    # Ejecutar la función seleccionada
     st.divider()
+    # Ejecutar función
     menu_options[choice]()
 
     # Logout
@@ -257,11 +287,11 @@ def main_app():
         st.query_params.clear()
         st.rerun()
 
-# --- 5. FUNCIONES DE VISTAS (Separadas para limpieza) ---
+# --- 5. FUNCIONES DE VISTAS ---
 
 def render_personnel(user):
     st.header("Gestión de Personal")
-    with st.expander("➕ Agregar Conductor", expanded=True):
+    with st.expander("➕ Agregar Conductor", expanded=False):
         with st.form("new_driver"):
             c1, c2, c3 = st.columns(3)
             nm = c1.text_input("Nombre").upper().strip()
@@ -276,31 +306,39 @@ def render_personnel(user):
     if REFS:
         st.write("### Nómina Activa")
         users_ref = REFS["fleets"].document(user['fleet']).collection("authorized_users")
-        # Usamos columnas expandibles para mejor UI
+        # Mostrar en grid
+        cols = st.columns(3)
+        i = 0
         for us in users_ref.stream():
             d = us.to_dict()
             if d.get('role') != 'admin':
-                with st.container(border=True):
-                    c1, c2, c3 = st.columns([4, 1, 1])
-                    status_icon = "🟢" if d.get('active') else "🔴"
-                    c1.markdown(f"**{us.id}** | 🆔 {d.get('cedula','-')} | 📞 {d.get('phone','-')}")
-                    
-                    if c2.button(f"{status_icon}", key=f"s{us.id}", help="Alternar acceso"):
-                        users_ref.document(us.id).update({"active": not d.get('active')})
-                        st.rerun()
-                    if c3.button("🗑️", key=f"d{us.id}"):
-                        users_ref.document(us.id).delete()
-                        st.rerun()
+                with cols[i % 3]:
+                    with st.container(border=True):
+                        st.markdown(f"**{us.id}**")
+                        st.caption(f"🆔 {d.get('cedula','-')} | 📞 {d.get('phone','-')}")
+                        c1, c2 = st.columns(2)
+                        
+                        btn_label = "Bloquear" if d.get('active') else "Activar"
+                        btn_color = "primary" if d.get('active') else "secondary"
+                        
+                        if c1.button(btn_label, key=f"s{us.id}"):
+                            users_ref.document(us.id).update({"active": not d.get('active')})
+                            st.rerun()
+                        if c2.button("Borrar", key=f"d{us.id}"):
+                            users_ref.document(us.id).delete()
+                            st.rerun()
+                i += 1
 
 def render_reports(df):
     st.header("Reportes de Flota")
-    t1, t2 = st.tabs(["🚦 Semáforo", "📜 Historial Avanzado"])
+    
+    if df.empty:
+        st.warning("No hay datos en el rango de fechas seleccionado.")
+        return
+
+    t1, t2 = st.tabs(["🚦 Estado Actual", "📜 Historial Económico"])
     
     with t1:
-        if df.empty:
-            st.info("No hay datos suficientes.")
-            return
-
         last_km = df.sort_values('date').groupby('bus')['km_current'].last()
         maint_view = df[df['km_next'] > 0].sort_values('date', ascending=False).drop_duplicates(subset=['bus', 'category'])
         
@@ -311,35 +349,45 @@ def render_reports(df):
             status = "🔴 VENCIDO" if diff < 0 else "🟡 PRÓXIMO" if diff <= 500 else "🟢 OK"
             report_data.append({
                 "Estado": status, "Bus": r['bus'], "Item": r['category'], 
-                "KM Actual": ckm, "Meta": r['km_next'], "Restante": diff
+                "KM Actual": ckm, "Meta": r['km_next'], "Restante": diff,
+                "Último Reg": r['date'].strftime('%d/%m/%Y')
             })
             
         rdf = pd.DataFrame(report_data)
         if not rdf.empty:
-            # Estilización de dataframe
             def color_status(val):
-                color = 'red' if 'VENCIDO' in val else 'orange' if 'PRÓXIMO' in val else 'green'
-                return f'color: {color}; font-weight: bold'
+                color = '#ffcccc' if 'VENCIDO' in val else '#fff3cd' if 'PRÓXIMO' in val else '#d4edda'
+                return f'background-color: {color}; color: black; font-weight: bold'
             
-            st.dataframe(rdf.style.map(color_status, subset=['Estado']), use_container_width=True)
+            st.dataframe(rdf.style.applymap(color_status, subset=['Estado']), use_container_width=True)
+        else:
+            st.info("No hay mantenimientos preventivos registrados.")
 
     with t2:
-        if df.empty: return
         c1, c2 = st.columns(2)
-        sel_bus = c1.selectbox("Unidad", ["Todas"] + sorted(df['bus'].unique().tolist()))
-        sel_cat = c2.selectbox("Categoría", ["Todas"] + sorted(df['category'].unique().tolist()))
+        sel_bus = c1.selectbox("Filtrar Unidad", ["Todas"] + sorted(df['bus'].unique().tolist()))
+        sel_cat = c2.selectbox("Filtrar Categoría", ["Todas"] + sorted(df['category'].unique().tolist()))
         
         df_fil = df.copy()
         if sel_bus != "Todas": df_fil = df_fil[df_fil['bus'] == sel_bus]
         if sel_cat != "Todas": df_fil = df_fil[df_fil['category'] == sel_cat]
         
-        total = df_fil['mec_cost'].sum() + df_fil['com_cost'].sum()
-        st.metric("Gasto Total Filtrado", f"${total:,.2f}")
-        st.dataframe(df_fil, use_container_width=True, hide_index=True)
+        # Métricas Económicas
+        m1, m2, m3 = st.columns(3)
+        total_mec = df_fil['mec_cost'].sum()
+        total_rep = df_fil['com_cost'].sum()
+        
+        m1.metric("Mano de Obra", f"${total_mec:,.2f}")
+        m2.metric("Repuestos/Comb.", f"${total_rep:,.2f}")
+        m3.metric("GASTO TOTAL", f"${total_mec + total_rep:,.2f}", delta_color="inverse")
+        
+        st.dataframe(df_fil[['date', 'bus', 'category', 'observations', 'km_current', 'mec_cost', 'com_cost']].sort_values('date', ascending=False), use_container_width=True, hide_index=True)
 
 def render_accounting(df, user, phone_map):
     st.header("Cuentas por Pagar")
-    if df.empty: return
+    if df.empty: 
+        st.info("Sin registros en el período seleccionado.")
+        return
 
     # Gráfico resumen
     if user['role'] == 'owner':
@@ -349,37 +397,43 @@ def render_accounting(df, user, phone_map):
 
     pend = df[(df['mec_cost'] > df['mec_paid']) | (df['com_cost'] > df['com_paid'])]
     if pend.empty: 
-        st.success("🎉 Todo está al día.")
+        st.success("🎉 No hay deudas pendientes en este período.")
         return
 
+    st.write(f"Deudas encontradas: {len(pend)}")
+    
     for _, r in pend.iterrows():
         with st.container(border=True):
-            st.subheader(f"{r['category']} - Bus {r['bus']}")
-            st.caption(f"Fecha: {r['date'].strftime('%Y-%m-%d')}")
+            col_info, col_pay = st.columns([1, 2])
             
-            c1, c2 = st.columns(2)
-            
-            # Lógica de pago refactorizada para evitar repetición de código
-            def payment_widget(col, type_prefix, cost_col, paid_col, name_col, label):
-                debt = r[cost_col] - r[paid_col]
-                if debt > 0:
-                    col.metric(f"Deuda {label}", f"${debt:,.2f}", delta=-debt)
-                    if user['role'] == 'owner':
-                        val = col.number_input(f"Abonar {label}", key=f"{type_prefix}{r['id']}")
-                        if col.button(f"Pagar {label}", key=f"btn_{type_prefix}{r['id']}") and REFS:
-                            REFS["data"].collection("logs").document(r['id']).update({paid_col: firestore.Increment(val)})
-                            
-                            # Generador de Link de WhatsApp
-                            phone = phone_map.get(r.get(name_col), '')
-                            msg = f"Pago realizado: ${val} por {label} de {r['category']} (Bus {r['bus']})"
-                            clean_phone = phone.replace('+', '').strip()
-                            if clean_phone:
-                                link = f"https://wa.me/{clean_phone}?text={urllib.parse.quote(msg)}"
-                                col.link_button("📲 Enviar Comprobante", link)
-                            st.rerun()
+            with col_info:
+                st.subheader(f"Bus {r['bus']}")
+                st.write(f"**{r['category']}**")
+                st.caption(f"{r['date'].strftime('%d-%m-%Y')}")
 
-            payment_widget(c1, "m", "mec_cost", "mec_paid", "mec_name", "Mecánico")
-            payment_widget(c2, "c", "com_cost", "com_paid", "com_name", "Repuestos")
+            with col_pay:
+                c1, c2 = st.columns(2)
+                # Lógica de pago refactorizada
+                def payment_widget(col, type_prefix, cost_col, paid_col, name_col, label):
+                    debt = r[cost_col] - r[paid_col]
+                    if debt > 0:
+                        col.metric(f"Deuda {label}", f"${debt:,.2f}", delta=-debt)
+                        if user['role'] == 'owner':
+                            val = col.number_input(f"Abonar {label}", key=f"{type_prefix}{r['id']}", max_value=float(debt))
+                            if col.button(f"Pagar {label}", key=f"btn_{type_prefix}{r['id']}") and REFS:
+                                REFS["data"].collection("logs").document(r['id']).update({paid_col: firestore.Increment(val)})
+                                
+                                # WhatsApp Link
+                                phone = phone_map.get(r.get(name_col), '')
+                                msg = f"Abono: ${val} - {label} ({r['category']} - Bus {r['bus']})"
+                                clean_phone = phone.replace('+', '').strip()
+                                if clean_phone:
+                                    link = f"https://wa.me/{clean_phone}?text={urllib.parse.quote(msg)}"
+                                    col.markdown(f"[📲 Enviar WhatsApp]({link})")
+                                st.rerun()
+
+                payment_widget(c1, "m", "mec_cost", "mec_paid", "mec_name", "Mecánico")
+                payment_widget(c2, "c", "com_cost", "com_paid", "com_name", "Repuestos")
 
 def render_workshop(user, providers):
     st.header("Registro de Mantenimiento")
@@ -454,12 +508,13 @@ def render_directory(providers, user):
                     c2.link_button("WhatsApp", f"https://wa.me/{ph}")
 
 def render_radar(df, user):
-    st.subheader("Estado de la Flota")
+    st.subheader("Radar de Flota")
     buses = sorted(df['bus'].unique()) if user['role']=='owner' else [user['bus']]
     
-    if not buses: st.info("No hay registros aún."); return
+    if not buses: 
+        st.info("No hay datos en el rango seleccionado. Intenta ampliar la fecha en el menú lateral.")
+        return
 
-    # Grid layout para las tarjetas
     cols = st.columns(3)
     for i, bus in enumerate(buses):
         with cols[i % 3]:
@@ -469,28 +524,28 @@ def render_radar(df, user):
             latest = bus_df.iloc[0]
             days_inactive = (datetime.now() - latest['date']).days
             
-            # Lógica de semáforo simplificada
-            status_color = "green"
+            status_color = "#28a745" # Green
             status_text = "OPERATIVO"
             
-            # Revisar preventivos pendientes
             pending = bus_df[bus_df['km_next'] > 0]
             if not pending.empty:
                 diff = pending.iloc[0]['km_next'] - latest['km_current']
                 if diff < 0: 
-                    status_color = "red"; status_text = "MANT. VENCIDO"
+                    status_color = "#dc3545"; status_text = "MANT. VENCIDO" # Red
                 elif diff <= 500:
-                    status_color = "orange"; status_text = "MANT. PRÓXIMO"
+                    status_color = "#ffc107"; status_text = "MANT. PRÓXIMO" # Warning
             
             if days_inactive > 5:
                 status_text = f"INACTIVO ({days_inactive}d)"
-                status_color = "gray"
+                status_color = "#6c757d" # Gray
 
             st.markdown(f"""
-            <div style="border:1px solid #ddd; padding:10px; border-radius:10px; border-top: 5px solid {status_color}; margin-bottom:10px">
-                <h3 style="margin:0">Bus {bus}</h3>
-                <p style="font-size:24px; font-weight:bold; margin:0">{latest['km_current']:,.0f} km</p>
-                <small style="color:{status_color}; font-weight:bold">{status_text}</small>
+            <div style="border:1px solid #ddd; padding:15px; border-radius:12px; border-top: 6px solid {status_color}; margin-bottom:15px; background: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                <h3 style="margin:0; color: #333;">Bus {bus}</h3>
+                <p style="font-size:28px; font-weight:800; margin:5px 0; color: #1E1E1E;">{latest['km_current']:,.0f} km</p>
+                <div style="background-color:{status_color}; color: white; padding: 2px 8px; border-radius: 4px; display: inline-block; font-size: 12px; font-weight: bold;">
+                    {status_text}
+                </div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -512,7 +567,7 @@ def render_fuel():
                 "km_current": km,
                 "gallons": gal,
                 "com_cost": cost,
-                "com_paid": cost # Asumimos pago inmediato en gasolinera
+                "com_paid": cost 
             })
             st.success("Carga registrada")
             time.sleep(0.5)
@@ -521,7 +576,6 @@ def render_fuel():
 # --- 6. PUNTO DE ENTRADA ---
 
 if 'user' not in st.session_state:
-    # Recuperación de sesión por URL
     params = st.query_params
     if "f" in params:
         st.session_state.user = {
