@@ -5,3 +5,5 @@ Pillow
 requests
 plotly
 google-generativeai>=0.7.0
+
+
