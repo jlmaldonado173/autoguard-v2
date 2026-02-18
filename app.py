@@ -8,37 +8,20 @@ import google.generativeai as genai
 import json
 import time
 import urllib.parse
-
-# --- 1. CONFIGURACIÓN Y API KEYS ---
-APP_CONFIG = {
-    "APP_ID": "itero",
-    "MASTER_KEY": "ADMIN123",
-    "VERSION": "4.0.0 AI-Powered"
-}
-
 # --- CONFIGURACIÓN DE IA (GEMINI) ---
-import google.generativeai as genai
-
 # Intentamos obtener la clave desde los Secretos de Streamlit
 try:
     if "GEMINI_KEY" in st.secrets:
-        # Esto busca en la bóveda segura de la nube
+        # Aquí es donde ocurría el error: usamos st.secrets directamente
         genai.configure(api_key=st.secrets["GEMINI_KEY"]["api_key"])
         HAS_AI = True
     else:
-        # Por si acaso alguien lo corre local sin configurar
         HAS_AI = False
         st.warning("⚠️ Falta configurar la API Key en los Secretos.")
 except Exception as e:
     HAS_AI = False
     st.error(f"Error configurando IA: {e}")
 
-try:
-    genai.configure(api_key=GEMINI_API_KEY)
-    HAS_AI = True
-except Exception as e:
-    HAS_AI = False
-    st.error(f"Error configurando IA: {e}")
 
 UI_COLORS = {
     "primary": "#1E1E1E",
@@ -76,8 +59,11 @@ st.markdown(f"""
 def get_db_client():
     try:
         if not firebase_admin._apps:
+            # VERIFICACIÓN: Buscamos en Secrets
             if "FIREBASE_JSON" in st.secrets:
-                cred = credentials.Certificate(json.loads(st.secrets["FIREBASE_JSON"]))
+                # CORRECCIÓN: Usamos dict() directo. ¡NO json.loads!
+                key_dict = dict(st.secrets["FIREBASE_JSON"])
+                cred = credentials.Certificate(key_dict)
                 firebase_admin.initialize_app(cred)
             else:
                 return None
@@ -85,6 +71,7 @@ def get_db_client():
     except Exception as e:
         st.error(f"Error de conexión DB: {e}")
         return None
+
 
 db = get_db_client()
 
