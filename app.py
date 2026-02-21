@@ -874,6 +874,56 @@ def render_directory(providers, user):
                             })
                             st.cache_data.clear()
                             st.success("Actualizado"); time.sleep(0.5); st.rerun()
+def render_mechanic_work(user, bus_id, providers):
+    st.info(f"Registrando trabajo para la Unidad: **{bus_id}**")
+    
+    # Buscamos el nombre del comercio en el directorio para que el mecánico elija dónde compró repuestos
+    coms = [p['name'] for p in providers if p['type'] == "Comercio"]
+    
+    with st.form("mechanic_log"):
+        cat = st.selectbox("Categoría del Daño", ["Mecánica", "Eléctrica", "Frenos", "Suspensión", "Motor"])
+        obs = st.text_area("Informe Técnico", placeholder="Describa el daño encontrado y la solución...")
+        
+        c1, c2 = st.columns(2)
+        mo_cost = c1.number_input("Costo Mano de Obra $", min_value=0.0)
+        
+        st.divider()
+        st.write("🛒 **Repuestos Utilizados**")
+        store_name = st.selectbox("Comprado en:", ["N/A"] + coms)
+        rep_cost = st.number_input("Costo de Repuestos $", min_value=0.0)
+        
+        # Foto obligatoria del daño o repuesto
+        foto = st.camera_input("Capturar evidencia del trabajo")
+        
+        if st.form_submit_button("ENVIAR REPORTE Y CARGAR A CONTABILIDAD", type="primary"):
+            if not foto or not obs:
+                st.error("Debe incluir descripción y foto de evidencia.")
+            else:
+                # Convertir foto
+                bytes_data = foto.getvalue()
+                b64 = base64.b64encode(bytes_data).decode()
+                
+                # GUARDAR EN FIREBASE
+                REFS["data"].collection("logs").add({
+                    "fleetId": user['fleet'],
+                    "bus": bus_id,
+                    "date": datetime.now().isoformat(),
+                    "category": cat,
+                    "observations": f"REPORTE MECÁNICO ({user['name']}): {obs}",
+                    "km_current": 0, # El mecánico no siempre sabe el KM, se puede dejar en 0
+                    "mec_name": user['name'], # El nombre del mecánico que inició sesión
+                    "mec_cost": mo_cost,
+                    "mec_paid": 0, # Se guarda como DEUDA automáticamente
+                    "com_name": store_name,
+                    "com_cost": rep_cost,
+                    "com_paid": 0, # Se guarda como DEUDA
+                    "photo_b64": b64
+                })
+                
+                st.cache_data.clear()
+                st.success("✅ Reporte enviado. El dueño ya puede ver los costos en Contabilidad.")
+                time.sleep(1)
+                st.rerun()
 def main():
     if 'user' not in st.session_state:
         ui_render_login()
@@ -923,6 +973,24 @@ def main():
             }
             choice = st.sidebar.radio("Más opciones:", list(menu.keys()))
             menu[choice]()
+            
+        if u['role'] == 'mechanic':
+            # NUEVA PANTALLA PARA EL MECÁNICO
+            st.subheader(f"🛠️ Panel de Servicio: {u['name']}")
+            
+            # El mecánico elige qué bus está revisando
+            bus_id = st.selectbox("Seleccione Unidad en Revisión", sorted(df['bus'].unique()))
+            
+            menu_mech = {
+                "📝 Registrar Trabajo": lambda: render_mechanic_work(u, bus_id, provs),
+                "🏢 Directorio": lambda: render_directory(provs, u),
+                "🏠 Estado del Bus": lambda: render_radar(df[df['bus']==bus_id], u)
+            }
+            choice = st.sidebar.radio("Menú Mecánico:", list(menu_mech.keys()))
+            menu_mech[choice]()
+            
+        else: # Dueño
+            # ... (código que ya tienes para el dueño)
 
         # --- LÓGICA PARA EL DUEÑO ---
         else:
