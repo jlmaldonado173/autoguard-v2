@@ -8,6 +8,69 @@ import google.generativeai as genai
 import plotly.express as px  # Librería para gráficos visuales
 import time
 import urllib.parse
+import base64 # Asegúrate de tener este import al inicio del archivo app.py
+
+def render_workshop(user, providers):
+    st.header("🛠️ Registro de Taller")
+    
+    mecs = [p['name'] for p in providers if p['type'] == "Mecánico"]
+    coms = [p['name'] for p in providers if p['type'] == "Comercio"]
+    
+    with st.form("workshop_form", clear_on_submit=False):
+        tp = st.radio("Tipo", ["Preventivo", "Correctivo"], horizontal=True)
+        
+        # 📸 CAMARA OBLIGATORIA
+        st.write("📸 **Foto del trabajo o factura (Obligatoria)**")
+        foto_archivo = st.camera_input("Capturar evidencia")
+        
+        c1, c2 = st.columns(2)
+        cat = c1.selectbox("Categoría", ["Aceite Motor", "Caja", "Corona", "Frenos", "Llantas", "Suspensión", "Eléctrico", "Otro"])
+        obs = st.text_area("Detalle")
+        
+        ka = c1.number_input("KM Actual", min_value=0)
+        kn = c2.number_input("Próximo", min_value=ka) if tp == "Preventivo" else 0
+        
+        st.divider()
+        mn = c1.selectbox("Mecánico", ["N/A"] + mecs)
+        mc = c1.number_input("Mano Obra $")
+        mp = c1.number_input("Abono MO $", max_value=mc)
+        
+        rn = c2.selectbox("Comercio", ["N/A"] + coms)
+        rc = c2.number_input("Repuestos $")
+        rp = c2.number_input("Abono Rep $", max_value=rc)
+        
+        if st.form_submit_button("💾 GUARDAR", type="primary", use_container_width=True):
+            if not foto_archivo:
+                st.error("❌ No puedes guardar sin tomar una foto.")
+            elif ka <= 0:
+                st.error("❌ El kilometraje debe ser mayor a 0.")
+            else:
+                # --- PROCESAR FOTO A TEXTO ---
+                bytes_data = foto_archivo.getvalue()
+                base64_photo = base64.b64encode(bytes_data).decode()
+                
+                # --- GUARDAR EN FIREBASE ---
+                REFS["data"].collection("logs").add({
+                    "fleetId": user['fleet'],
+                    "bus": user['bus'],
+                    "date": datetime.now().isoformat(),
+                    "category": cat,
+                    "observations": obs,
+                    "km_current": ka,
+                    "km_next": kn,
+                    "mec_name": mn,
+                    "mec_cost": mc,
+                    "mec_paid": mp,
+                    "com_name": rn,
+                    "com_cost": rc,
+                    "com_paid": rp,
+                    "photo_b64": base64_photo # La foto ahora es parte del documento
+                })
+                
+                st.cache_data.clear()
+                st.success("✅ Registro y foto guardados")
+                time.sleep(1)
+                st.rerun()
 
 # --- 1. CONFIGURACIÓN Y ESTILOS ---
 APP_CONFIG = {
