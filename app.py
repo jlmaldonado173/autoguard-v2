@@ -496,13 +496,16 @@ def render_ai_training(user):
         doc_ref.set({"ai_rules": new_rules}, merge=True); st.success("IA Actualizada"); st.rerun()
 
 def render_reports(df):
-    st.header("Reportes")
-    if df.empty: st.warning("No hay datos."); return
-    t1, t2, t3 = st.tabs(["📊 Gráficos Visuales", "🚦 Estado de Unidades", "📜 Historial Completo"])
+    st.header("📊 Reportes y Auditoría")
+    if df.empty: 
+        st.warning("No hay datos.")
+        return
+        
+    t1, t2, t3 = st.tabs(["📊 Gráficos Visuales", "🚦 Estado de Unidades", "📜 Historial Detallado"])
     
     with t1:
         c1, c2 = st.columns(2)
-        df['total_cost'] = df['mec_cost'] + df['com_cost']
+        df['total_cost'] = df.get('mec_cost', 0) + df.get('com_cost', 0)
         c1.plotly_chart(px.pie(df, values='total_cost', names='category', title='Gastos por Categoría'), use_container_width=True)
         c2.plotly_chart(px.bar(df, x='bus', y='total_cost', title='Gastos por Unidad'), use_container_width=True)
 
@@ -514,7 +517,35 @@ def render_reports(df):
             st.dataframe(pd.DataFrame(data).sort_values('bus'), use_container_width=True, hide_index=True)
 
     with t3:
-        st.dataframe(df.sort_values('date', ascending=False), use_container_width=True)
+        st.subheader("📜 Bitácora de Movimientos")
+        # Ordenamos por fecha descendente
+        df_sorted = df.sort_values('date', ascending=False)
+        
+        for _, r in df_sorted.iterrows():
+            # Título del expander con fecha y bus
+            fecha_str = r['date'].strftime('%d/%m/%Y')
+            with st.expander(f"📅 {fecha_str} | Bus {r['bus']} | {r['category']}"):
+                col_txt, col_img = st.columns([2, 1])
+                
+                with col_txt:
+                    st.write(f"**Detalle:** {r.get('observations', 'Sin detalle')}")
+                    st.write(f"**KM:** {r['km_current']:,.0f}")
+                    if r.get('mec_name') and r['mec_name'] != "N/A":
+                        st.caption(f"👨‍🔧 Mecánico: {r['mec_name']} (${r['mec_cost']})")
+                    if r.get('com_name') and r['com_name'] != "N/A":
+                        st.caption(f"🛒 Comercio: {r['com_name']} (${r['com_cost']})")
+                
+                with col_img:
+                    # --- AQUÍ SE MUESTRA LA FOTO CAPTURADA ---
+                    if "photo_b64" in r and r["photo_b64"]:
+                        try:
+                            st.image(f"data:image/jpeg;base64,{r['photo_b64']}", 
+                                     caption="Evidencia capturada", 
+                                     use_container_width=True)
+                        except:
+                            st.error("Error al cargar imagen")
+                    else:
+                        st.info("🚫 Sin foto")
 
 def render_accounting(df, user, phone_map):
     st.header("💰 Contabilidad y Abonos")
