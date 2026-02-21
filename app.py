@@ -742,7 +742,7 @@ def main():
 
         # --- LÓGICA PARA EL CONDUCTOR ---
         if u['role'] == 'driver':
-            # 1. COMBUSTIBLE SIEMPRE ABIERTO (Prioridad operativa)
+            # 1. COMBUSTIBLE SIEMPRE ABIERTO (Al inicio)
             st.subheader("⛽ Carga de Combustible")
             with st.form("fuel_driver_main"):
                 c1, c2, c3 = st.columns(3)
@@ -761,7 +761,7 @@ def main():
                         st.rerun()
             st.divider()
             
-            # 2. MENÚ DE OPCIONES PARA CONDUCTOR (Radar incluido aquí)
+            # 2. MENÚ DE OPCIONES PARA CONDUCTOR
             menu = {
                 "🏠 Radar de Unidad": lambda: render_radar(df, u),
                 "💰 Pagos y Abonos": lambda: render_accounting(df, u, phone_map),
@@ -770,8 +770,6 @@ def main():
                 "🏢 Directorio": lambda: render_directory(provs, u)
             }
             choice = st.sidebar.radio("Más opciones:", list(menu.keys()))
-            
-            # Renderizamos la opción elegida del menú
             menu[choice]()
 
         # --- LÓGICA PARA EL DUEÑO ---
@@ -796,3 +794,7 @@ def main():
         if st.sidebar.button("Cerrar Sesión", use_container_width=True): 
             st.session_state.clear()
             st.rerun()
+
+if __name__ == "__main__":
+    main()
+    
