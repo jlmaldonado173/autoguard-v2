@@ -740,15 +740,13 @@ def main():
         provs, df = fetch_fleet_data(u['fleet'], u['role'], u['bus'], dr[0], dr[1])
         phone_map = {p['name']: p.get('phone', '') for p in provs}
 
-        # --- PANTALLA FIJA SUPERIOR (RADAR) ---
-        render_radar(df, u)
-        st.divider()
-
-        # --- LÓGICA DE MENÚ SEGÚN ROL ---
-        menu = {} # Inicializamos el diccionario vacío
-        
+        # --- LÓGICA PARA EL CONDUCTOR ---
         if u['role'] == 'driver':
-            # 1. Combustible siempre abierto para el conductor
+            # 1. EL RADAR SIEMPRE DE PRIMERO (Estado de la unidad)
+            render_radar(df, u) 
+            st.divider()
+
+            # 2. COMBUSTIBLE ABIERTO (Para carga rápida)
             st.subheader("⛽ Carga de Combustible")
             with st.form("fuel_driver_main"):
                 c1, c2, c3 = st.columns(3)
@@ -762,19 +760,25 @@ def main():
                             "category": "Combustible", "km_current": k, "gallons": g, "com_cost": c, "com_paid": c
                         })
                         st.cache_data.clear()
-                        st.success("Registrado")
+                        st.success("Registrado con éxito")
                         time.sleep(1)
                         st.rerun()
             st.divider()
             
-            # Opciones para conductor
+            # 3. MENÚ DE OPCIONES PARA CONDUCTOR
             menu = {
+                "💰 Pagos y Abonos": lambda: render_accounting(df, u, phone_map),
                 "📊 Mis Reportes": lambda: render_reports(df),
                 "🛠️ Reportar Taller": lambda: render_workshop(u, provs),
                 "🏢 Directorio": lambda: render_directory(provs, u)
             }
+            choice = st.sidebar.radio("Más opciones:", list(menu.keys()))
+            menu[choice]()
+
+        # --- LÓGICA PARA EL DUEÑO (Se mantiene igual) ---
         else:
-            # MENÚ COMPLETO PARA EL DUEÑO
+            render_radar(df, u)
+            st.divider()
             menu = {
                 "⛽ Combustible": lambda: render_fuel(), 
                 "📊 Reportes": lambda: render_reports(df),
@@ -785,21 +789,11 @@ def main():
                 "🚛 Gestión": lambda: render_fleet_management(df, u),
                 "🧠 Entrenar IA": lambda: render_ai_training(u)
             }
-
-        # Renderizar la opción seleccionada del menú
-        if menu:
             choice = st.sidebar.radio("Ir a:", list(menu.keys()))
             menu[choice]()
         
-        # Botones finales en el Sidebar
+        # Sidebar final
         st.sidebar.divider()
-        if not df.empty:
-            st.sidebar.download_button("📥 Bajar Excel", df.to_csv(index=False).encode('utf-8'), "reporte.csv")
-        
         if st.sidebar.button("Cerrar Sesión"): 
             st.session_state.clear()
             st.rerun()
-
-if __name__ == "__main__":
-    main()
-                        
