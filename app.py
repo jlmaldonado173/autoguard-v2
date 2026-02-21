@@ -942,9 +942,10 @@ def main():
         provs, df = fetch_fleet_data(u['fleet'], u['role'], u['bus'], dr[0], dr[1])
         phone_map = {p['name']: p.get('phone', '') for p in provs}
 
-        # --- LÓGICA PARA EL CONDUCTOR ---
+ # --- LÓGICA POR ROLES ---
+        
+        # 1. CONDUCTOR (Tu código actual)
         if u['role'] == 'driver':
-            # 1. COMBUSTIBLE SIEMPRE ABIERTO (Al inicio)
             st.subheader("⛽ Carga de Combustible")
             with st.form("fuel_driver_main"):
                 c1, c2, c3 = st.columns(3)
@@ -958,12 +959,8 @@ def main():
                             "category": "Combustible", "km_current": k, "gallons": g, "com_cost": c, "com_paid": c
                         })
                         st.cache_data.clear()
-                        st.success("Registrado con éxito")
-                        time.sleep(1)
-                        st.rerun()
+                        st.success("Registrado con éxito"); time.sleep(1); st.rerun()
             st.divider()
-            
-            # 2. MENÚ DE OPCIONES PARA CONDUCTOR
             menu = {
                 "🏠 Radar de Unidad": lambda: render_radar(df, u),
                 "💰 Pagos y Abonos": lambda: render_accounting(df, u, phone_map),
@@ -973,21 +970,43 @@ def main():
             }
             choice = st.sidebar.radio("Más opciones:", list(menu.keys()))
             menu[choice]()
+
+        # 2. MECÁNICO (Nuevo bloque)
+        elif u['role'] == 'mechanic':
+            st.subheader(f"🛠️ Centro de Servicio: {u['name']}")
             
-        if u['role'] == 'mechanic':
-            # NUEVA PANTALLA PARA EL MECÁNICO
-            st.subheader(f"🛠️ Panel de Servicio: {u['name']}")
+            # El mecánico elige a qué bus le va a trabajar de toda la flota
+            buses_disponibles = sorted(df['bus'].unique()) if not df.empty else ["Sin Unidades"]
+            bus_seleccionado = st.sidebar.selectbox("Unidad a Reparar", buses_disponibles)
             
-            # El mecánico elige qué bus está revisando
-            bus_id = st.selectbox("Seleccione Unidad en Revisión", sorted(df['bus'].unique()))
-            
+            # Filtramos datos solo para ese bus para que el mecánico vea su historial
+            df_bus = df[df['bus'] == bus_seleccionado] if not df.empty else df
+
             menu_mech = {
-                "📝 Registrar Trabajo": lambda: render_mechanic_work(u, bus_id, provs),
-                "🏢 Directorio": lambda: render_directory(provs, u),
-                "🏠 Estado del Bus": lambda: render_radar(df[df['bus']==bus_id], u)
+                "📝 Registrar Trabajo": lambda: render_mechanic_work(u, bus_seleccionado, provs),
+                "🏠 Estado del Bus": lambda: render_radar(df_bus, u),
+                "📊 Historial Técnico": lambda: render_reports(df_bus),
+                "🏢 Directorio": lambda: render_directory(provs, u)
             }
             choice = st.sidebar.radio("Menú Mecánico:", list(menu_mech.keys()))
             menu_mech[choice]()
+
+        # 3. DUEÑO
+        else:
+            render_radar(df, u)
+            st.divider()
+            menu = {
+                "⛽ Combustible": lambda: render_fuel(), 
+                "📊 Reportes": lambda: render_reports(df),
+                "🛠️ Taller": lambda: render_workshop(u, provs),
+                "💰 Contabilidad": lambda: render_accounting(df, u, phone_map),
+                "🏢 Directorio": lambda: render_directory(provs, u),
+                "👥 Personal": lambda: render_personnel(u),
+                "🚛 Gestión": lambda: render_fleet_management(df, u),
+                "🧠 Entrenar IA": lambda: render_ai_training(u)
+            }
+            choice = st.sidebar.radio("Ir a:", list(menu_owner.keys()))
+            menu[choice]()
             
         else: # Dueño
             # ... (código que ya tienes para el dueño)
