@@ -13,7 +13,7 @@ import urllib.parse
 APP_CONFIG = {
     "APP_ID": "itero-titanium-v15",
     "MASTER_KEY": "ADMIN123",
-    "VERSION": "10.0.0 Itero Master AI", # Versión final integrada
+    "VERSION": "10.5.0 Itero Master AI", # Versión con IA Corregida
     "LOGO_URL": "Gemini_Generated_Image_buyjdmbuyjdmbuyj.png", # Tu logo
     "BOSS_PHONE": "0999999999" # <--- CAMBIA ESTO POR TU NÚMERO REAL
 }
@@ -26,10 +26,10 @@ UI_COLORS = {
     "bg_metric": "#f8f9fa"
 }
 
-# Corregido a Itero
+# Corregido de Itaro a Itero
 st.set_page_config(page_title="Itero AI", layout="wide", page_icon="🚛")
 
-# Estilos CSS Profesionales
+# Estilos CSS Profesionales (Tu código original)
 st.markdown(f"""
     <style>
     .main-title {{ font-size: 60px; font-weight: 800; color: {UI_COLORS['primary']}; text-align: center; margin-top: -20px; }}
@@ -57,7 +57,7 @@ def format_phone(phone):
     if not p.startswith("593"): return "593" + p 
     return p
 
-# --- 2. CONFIGURACIÓN DE IA (ENTRENABLE) ---
+# --- 2. CONFIGURACIÓN DE IA (SOLUCIÓN AL ERROR 404) ---
 try:
     if "GEMINI_KEY" in st.secrets:
         genai.configure(api_key=st.secrets["GEMINI_KEY"]["api_key"])
@@ -68,10 +68,11 @@ except Exception as e:
     HAS_AI = False
 
 def get_ai_analysis(df_bus, bus_id, fleet_id):
-    """IA Holística: Analiza historial basándose en tus reglas de entrenamiento."""
+    """IA Holística: Corregida para evitar errores de modelo no encontrado."""
     if not HAS_AI: return "⚠️ IA no disponible."
+    
     try:
-        # Recuperar reglas de entrenamiento guardadas por el jefe
+        # Recuperar reglas de entrenamiento
         fleet_doc = REFS["fleets"].document(fleet_id).get()
         ai_rules = fleet_doc.to_dict().get("ai_rules", "") if fleet_doc.exists else ""
 
@@ -83,12 +84,25 @@ def get_ai_analysis(df_bus, bus_id, fleet_id):
         Actúa como el Jefe de Taller Experto de ITERO. Analiza el historial del Bus {bus_id}:
         {summary}
         
-        REGLAS DE TU DUEÑO (MEMORIZA ESTO):
+        REGLAS DE TU DUEÑO:
         {ai_rules if ai_rules else "Analiza combustible y mantenimiento buscando anomalías."}
 
         Dame 3 puntos breves (Diagnóstico, Alerta de Costos/Fraudes, Recomendación). Usa emojis.
         """
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        # --- SOLUCIÓN AL 404: Listar modelos disponibles dinámicamente ---
+        valid_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        
+        # Priorizar flash, luego pro, luego el primero disponible
+        model_to_use = "models/gemini-1.5-flash" # Default
+        if valid_models:
+            model_to_use = valid_models[0]
+            for m in valid_models:
+                if "1.5-flash" in m:
+                    model_to_use = m
+                    break
+
+        model = genai.GenerativeModel(model_to_use)
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
@@ -150,7 +164,7 @@ def fetch_fleet_data(fleet_id: str, role: str, bus_id: str, start_d: date, end_d
     except Exception as e:
         st.error(f"Error: {e}"); return [], pd.DataFrame()
 
-# --- 4. UI LOGIN Y REGISTRO ---
+# --- 4. UI LOGIN Y SUPER ADMIN (Tu código completo) ---
 def ui_render_login():
     st.markdown('<div class="main-title">Itero AI</div>', unsafe_allow_html=True)
     t1, t2, t3 = st.tabs(["👤 Ingresar", "📝 Crear Flota", "⚙️ Super Admin"])
@@ -223,7 +237,7 @@ def render_super_admin():
 
 # --- 5. VISTAS PRINCIPALES ---
 def render_radar(df, user):
-    st.subheader("📡 Centro de Control")
+    st.subheader("📡 Radar de Flota")
     if df.empty or 'bus' not in df.columns: st.info("⏳ Sin datos."); return
 
     buses = sorted(df['bus'].unique()) if user['role']=='owner' else [user['bus']]
@@ -234,7 +248,7 @@ def render_radar(df, user):
         if bus_df.empty: st.warning("Sin historial."); return
         latest = bus_df.iloc[0]; pending = bus_df[bus_df['km_next'] > 0]
         
-        color = "#28a745"; msg = "✅ UNIDAD OPERATIVA"; wa = ""
+        color = "#28a745"; msg = "✅ OPERATIVO"; wa = ""
         if not pending.empty:
             diff = pending.iloc[0]['km_next'] - latest['km_current']
             if diff < 0: color = "#dc3545"; msg = f"🚨 VENCIDO: {pending.iloc[0]['category']}"; wa = f"Jefe, mi unidad {bus} tiene vencido {pending.iloc[0]['category']}."
@@ -278,7 +292,7 @@ def render_ai_training(user):
 def render_reports(df):
     st.header("Reportes")
     if df.empty: st.warning("No hay datos."); return
-    t1, t2, t3 = st.tabs(["📊 Gráficos Visuales", "🚦 Estado de Unidades", "📜 Base de Datos Cruda"])
+    t1, t2, t3 = st.tabs(["📊 Gráficos Visuales", "🚦 Estado de Unidades", "📜 Historial Completo"])
     
     with t1:
         c1, c2 = st.columns(2)
@@ -386,7 +400,6 @@ def render_directory(providers, user):
         if st.button("Guardar"): REFS["data"].collection("providers").add({"name":n,"phone":p,"type":t,"fleetId":user['fleet']}); st.rerun()
     for p in providers: st.write(f"**{p['name']}** ({p['type']}) {p.get('phone')}")
 
-# --- 6. MAIN ---
 def main():
     if 'user' not in st.session_state: ui_render_login()
     else:
