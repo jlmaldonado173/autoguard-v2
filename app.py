@@ -543,20 +543,69 @@ def render_accounting(df, user, phone_map):
                 st.markdown("---")
 
 def render_workshop(user, providers):
-    st.header("🛠️ Taller")
+    st.header("🛠️ Gestión de Taller")
+    
     mecs = [p['name'] for p in providers if p['type'] == "Mecánico"]
     coms = [p['name'] for p in providers if p['type'] == "Comercio"]
-    with st.form("w"):
-        tp = st.radio("Tipo", ["Preventivo", "Correctivo"], horizontal=True)
+    
+    with st.form("workshop_form"):
+        tp = st.radio("Tipo de Mantenimiento", ["Preventivo", "Correctivo"], horizontal=True)
+        
+        # --- SECCIÓN DE FOTO OBLIGATORIA ---
+        st.write("📸 **Evidencia Fotográfica (Obligatoria)**")
+        foto_captura = st.camera_input("Tome una foto del trabajo o factura")
+        
         c1, c2 = st.columns(2)
         cat = c1.selectbox("Categoría", ["Aceite Motor", "Caja", "Corona", "Frenos", "Llantas", "Suspensión", "Eléctrico", "Otro"])
-        obs = st.text_area("Detalle"); ka = c1.number_input("KM Actual", min_value=0); kn = c2.number_input("Próximo", min_value=ka) if tp=="Preventivo" else 0
-        mn = c1.selectbox("Mecánico", ["N/A"]+mecs); mc = c1.number_input("Mano Obra $"); mp = c1.number_input("Abono MO $")
-        rn = c2.selectbox("Comercio", ["N/A"]+coms); rc = c2.number_input("Repuestos $"); rp = c2.number_input("Abono Rep $")
-        if st.form_submit_button("GUARDAR", type="primary"):
-            REFS["data"].collection("logs").add({"fleetId":user['fleet'],"bus":user['bus'],"date":datetime.now().isoformat(),"category":cat,"observations":obs,"km_current":ka,"km_next":kn,"mec_name":mn,"mec_cost":mc,"mec_paid":mp,"com_name":rn,"com_cost":rc,"com_paid":rp})
-            fetch_fleet_data.clear(); st.success("OK"); st.rerun()
-
+        obs = st.text_area("Detalle del trabajo realizado")
+        
+        ka = c1.number_input("KM Actual", min_value=0)
+        kn = c2.number_input("Próximo Mantenimiento (KM)", min_value=ka) if tp == "Preventivo" else 0
+        
+        st.divider()
+        
+        # Costos y Proveedores
+        col_a, col_b = st.columns(2)
+        mn = col_a.selectbox("Mecánico", ["N/A"] + mecs)
+        mc = col_a.number_input("Costo Mano Obra $", min_value=0.0)
+        mp = col_a.number_input("Abono Inicial MO $", min_value=0.0, max_value=mc)
+        
+        rn = col_b.selectbox("Comercio / Repuestos", ["N/A"] + coms)
+        rc = col_b.number_input("Costo Repuestos $", min_value=0.0)
+        rp = col_b.number_input("Abono Inicial Rep $", min_value=0.0, max_value=rc)
+        
+        if st.form_submit_button("💾 GUARDAR REGISTRO", type="primary", use_container_width=True):
+            # VALIDACIÓN DE CÁMARA
+            if not foto_captura:
+                st.error("❌ ERROR: Es obligatorio tomar una foto para registrar el ingreso al taller.")
+            elif ka <= 0:
+                st.error("❌ ERROR: Debe ingresar el kilometraje actual.")
+            else:
+                # Proceso de guardado
+                datos_registro = {
+                    "fleetId": user['fleet'],
+                    "bus": user['bus'],
+                    "date": datetime.now().isoformat(),
+                    "category": cat,
+                    "observations": obs,
+                    "km_current": ka,
+                    "km_next": kn,
+                    "mec_name": mn,
+                    "mec_cost": mc,
+                    "mec_paid": mp,
+                    "com_name": rn,
+                    "com_cost": rc,
+                    "com_paid": rp,
+                    "has_photo": True  # Marcador de que hay evidencia
+                }
+                
+                REFS["data"].collection("logs").add(datos_registro)
+                
+                # Limpiar cache y refrescar
+                st.cache_data.clear()
+                st.success("✅ Registro guardado exitosamente")
+                time.sleep(1)
+                st.rerun()
 def render_fuel():
     u = st.session_state.user; st.header("⛽ Combustible")
     with st.form("f"):
