@@ -657,26 +657,61 @@ def render_fleet_management(df, user):
 
 def render_directory(providers, user):
     st.header("🏢 Directorio de Proveedores")
-    with st.expander("➕ Nuevo Proveedor"):
-        with st.form("new_prov"):
-            n = st.text_input("Nombre").upper()
-            p = st.text_input("WhatsApp (ej: 098...)")
-            t = st.selectbox("Tipo", ["Mecánico", "Comercio"])
-            if st.form_submit_button("Guardar"):
-                REFS["data"].collection("providers").add({"name":n, "phone":p, "type":t, "fleetId":user['fleet']})
-                st.rerun()
     
+    # Solo el Administrador puede añadir o gestionar
+    if user['role'] == 'owner':
+        with st.expander("➕ Registrar Nuevo Proveedor", expanded=False):
+            with st.form("new_prov"):
+                n = st.text_input("Nombre / Razón Social").upper()
+                p = st.text_input("WhatsApp (ej: 0990000000)")
+                t = st.selectbox("Especialidad", ["Mecánico", "Comercio", "Llantas", "Eléctrico", "Otro"])
+                if st.form_submit_button("Guardar Proveedor", type="primary"):
+                    if n and p:
+                        REFS["data"].collection("providers").add({
+                            "name": n, "phone": p, "type": t, "fleetId": user['fleet']
+                        })
+                        st.success("✅ Proveedor guardado"); st.rerun()
+                    else: st.warning("Completa nombre y teléfono.")
+
+    if not providers:
+        st.info("Aún no tienes proveedores registrados.")
+        return
+
+    # Listado de Proveedores con Edición y Borrado
     for p in providers:
         with st.container(border=True):
-            c1, c2 = st.columns([3, 1])
-            c1.write(f"**{p['name']}** ({p['type']})")
+            c1, c2, c3 = st.columns([3, 1, 1])
+            
+            # Columna 1: Información
+            c1.markdown(f"### {p['name']}")
+            c1.caption(f"🏷️ {p['type']} | 📞 {p.get('phone', 'S/N')}")
+            
+            # Columna 2: WhatsApp (Diseño moderno)
             if p.get('phone'):
                 ph = format_phone(p['phone'])
-                # Botón de WhatsApp directo
-                link = f"https://wa.me/{ph}?text=Hola {p['name']}, te escribo de la flota {user['fleet']}..."
-                c2.markdown(f'<a href="{link}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:8px; width:100%; border-radius:5px; font-weight:bold; cursor:pointer;">📲 WHATSAPP</button></a>', unsafe_allow_html=True)
-            else:
-                c2.write("Sin número")
+                link = f"https://wa.me/{ph}?text=Hola {p['name']}, te contacto de la flota {user['fleet']}..."
+                c2.markdown(f'<a href="{link}" target="_blank" class="btn-whatsapp" style="padding:10px; font-size:12px; text-align:center;">📲 CHATEAR</a>', unsafe_allow_html=True)
+            
+            # Columna 3: Gestión (Solo Dueño)
+            if user['role'] == 'owner':
+                # Botón para borrar
+                if c3.button("🗑️ Borrar", key=f"delp_{p['id']}"):
+                    REFS["data"].collection("providers").document(p['id']).delete()
+                    st.success(f"Eliminado: {p['name']}"); time.sleep(1); st.rerun()
+                
+                # Formulario para editar (Expander dentro de la lista)
+                with st.expander("✏️ Editar Datos"):
+                    with st.form(f"edit_p_{p['id']}"):
+                        new_n = st.text_input("Nombre", value=p['name']).upper()
+                        new_p = st.text_input("Teléfono", value=p.get('phone',''))
+                        new_t = st.selectbox("Tipo", ["Mecánico", "Comercio", "Llantas", "Eléctrico", "Otro"], 
+                                           index=["Mecánico", "Comercio", "Llantas", "Eléctrico", "Otro"].index(p['type']) if p['type'] in ["Mecánico", "Comercio", "Llantas", "Eléctrico", "Otro"] else 0)
+                        
+                        if st.form_submit_button("Actualizar"):
+                            REFS["data"].collection("providers").document(p['id']).update({
+                                "name": new_n, "phone": new_p, "type": new_t
+                            })
+                            st.success("Actualizado"); time.sleep(1); st.rerun()
 def main():
     if 'user' not in st.session_state: ui_render_login()
     else:
