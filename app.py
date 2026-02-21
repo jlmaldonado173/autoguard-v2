@@ -944,7 +944,9 @@ def main():
 
  # --- LÓGICA POR ROLES ---
         
-        # 1. CONDUCTOR (Tu código actual)
+        # --- LÓGICA POR ROLES ---
+        
+        # 1. ROL CONDUCTOR
         if u['role'] == 'driver':
             st.subheader("⛽ Carga de Combustible")
             with st.form("fuel_driver_main"):
@@ -971,27 +973,23 @@ def main():
             choice = st.sidebar.radio("Más opciones:", list(menu.keys()))
             menu[choice]()
 
-        # 2. MECÁNICO (Nuevo bloque)
+        # 2. ROL MECÁNICO
         elif u['role'] == 'mechanic':
             st.subheader(f"🛠️ Centro de Servicio: {u['name']}")
-            
-            # El mecánico elige a qué bus le va a trabajar de toda la flota
             buses_disponibles = sorted(df['bus'].unique()) if not df.empty else ["Sin Unidades"]
-            bus_seleccionado = st.sidebar.selectbox("Unidad a Reparar", buses_disponibles)
-            
-            # Filtramos datos solo para ese bus para que el mecánico vea su historial
-            df_bus = df[df['bus'] == bus_seleccionado] if not df.empty else df
+            bus_sel = st.sidebar.selectbox("Unidad a Reparar", buses_disponibles)
+            df_bus = df[df['bus'] == bus_sel] if not df.empty else df
 
-            menu_mech = {
-                "📝 Registrar Trabajo": lambda: render_mechanic_work(u, bus_seleccionado, provs),
+            menu = {
+                "📝 Registrar Trabajo": lambda: render_mechanic_work(u, bus_sel, provs),
                 "🏠 Estado del Bus": lambda: render_radar(df_bus, u),
                 "📊 Historial Técnico": lambda: render_reports(df_bus),
                 "🏢 Directorio": lambda: render_directory(provs, u)
             }
-            choice = st.sidebar.radio("Menú Mecánico:", list(menu_mech.keys()))
-            menu_mech[choice]()
+            choice = st.sidebar.radio("Menú Mecánico:", list(menu.keys()))
+            menu[choice]()
 
-        # 3. DUEÑO
+        # 3. ROL DUEÑO
         else:
             render_radar(df, u)
             st.divider()
@@ -1005,11 +1003,8 @@ def main():
                 "🚛 Gestión": lambda: render_fleet_management(df, u),
                 "🧠 Entrenar IA": lambda: render_ai_training(u)
             }
-            choice = st.sidebar.radio("Ir a:", list(menu_owner.keys()))
+            choice = st.sidebar.radio("Ir a:", list(menu.keys()))
             menu[choice]()
-            
-        else: # Dueño
-            # ... (código que ya tienes para el dueño)
 
         # --- LÓGICA PARA EL DUEÑO ---
         else:
