@@ -942,8 +942,6 @@ def main():
         provs, df = fetch_fleet_data(u['fleet'], u['role'], u['bus'], dr[0], dr[1])
         phone_map = {p['name']: p.get('phone', '') for p in provs}
 
- # --- LÓGICA POR ROLES ---
-        
         # --- LÓGICA POR ROLES ---
         
         # 1. ROL CONDUCTOR
@@ -989,24 +987,7 @@ def main():
             choice = st.sidebar.radio("Menú Mecánico:", list(menu.keys()))
             menu[choice]()
 
-        # 3. ROL DUEÑO
-        else:
-            render_radar(df, u)
-            st.divider()
-            menu = {
-                "⛽ Combustible": lambda: render_fuel(), 
-                "📊 Reportes": lambda: render_reports(df),
-                "🛠️ Taller": lambda: render_workshop(u, provs),
-                "💰 Contabilidad": lambda: render_accounting(df, u, phone_map),
-                "🏢 Directorio": lambda: render_directory(provs, u),
-                "👥 Personal": lambda: render_personnel(u),
-                "🚛 Gestión": lambda: render_fleet_management(df, u),
-                "🧠 Entrenar IA": lambda: render_ai_training(u)
-            }
-            choice = st.sidebar.radio("Ir a:", list(menu.keys()))
-            menu[choice]()
-
-        # --- LÓGICA PARA EL DUEÑO ---
+        # 3. ROL DUEÑO (Un solo bloque else)
         else:
             render_radar(df, u)
             st.divider()
