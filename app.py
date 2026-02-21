@@ -311,26 +311,60 @@ def render_reports(df):
         st.dataframe(df.sort_values('date', ascending=False), use_container_width=True)
 
 def render_accounting(df, user, phone_map):
-    st.header("Contabilidad y Abonos")
+    st.header("💰 Contabilidad y Abonos")
     pend = df[(df['mec_cost'] > df['mec_paid']) | (df['com_cost'] > df['com_paid'])]
     if pend.empty: st.success("🎉 Todo al día."); return
+    
     for bus in sorted(pend['bus'].unique()):
-        with st.expander(f"Deudas Bus {bus}", expanded=True):
+        with st.expander(f"🚌 Deudas Bus {bus}", expanded=True):
             for _, r in pend[pend['bus'] == bus].iterrows():
                 st.write(f"**{r['category']}** ({r['date'].strftime('%d-%m-%Y')})")
                 c1, c2 = st.columns(2)
+                
                 for t, cost, paid, name, lbl in [('m', 'mec_cost', 'mec_paid', 'mec_name', 'Mecánico'), ('c', 'com_cost', 'com_paid', 'com_name', 'Repuestos')]:
                     debt = r[cost] - r[paid]
                     col = c1 if t=='m' else c2
+                    
                     if debt > 0:
                         col.metric(lbl, f"${debt:,.2f}")
                         if user['role'] == 'owner':
-                            v = col.number_input("Abonar", key=f"{t}{r['id']}", max_value=float(debt))
-                            if col.button("Pagar", key=f"b_{t}{r['id']}"):
+                            # Input para el monto del abono
+                            v = col.number_input(f"Abonar a {r.get(name,'')}", key=f"{t}{r['id']}", max_value=float(debt), min_value=0.0)
+                            
+                            if col.button("Registrar Pago y Notificar", key=f"b_{t}{r['id']}"):
+                                # Lógica de actualización en DB
                                 REFS["data"].collection("logs").document(r['id']).update({paid: firestore.Increment(v)})
+                                
+                                # Cálculo del nuevo saldo para el mensaje
+                                nuevo_saldo = debt - v
                                 ph = format_phone(phone_map.get(r.get(name),''))
-                                if ph: st.markdown(f"[📲 WhatsApp](https://wa.me/{ph}?text=Abono+Bus+{bus})")
-                                fetch_fleet_data.clear(); st.rerun()
+                                
+                                if ph:
+                                    # MENSAJE AUTOMÁTICO DETALLADO
+                                    texto = (
+                                        f"Hola *{r.get(name,'')}*, te envío el detalle del pago:\n\n"
+                                        f"✅ *Abono realizado:* ${v:,.2f}\n"
+                                        f"🚛 *Unidad:* Bus {bus}\n"
+                                        f"🔧 *Trabajo:* {r['category']}\n"
+                                        f"📉 *Saldo Pendiente:* ${nuevo_saldo:,.2f}\n\n"
+                                        f"Gracias por tu servicio."
+                                    )
+                                    
+                                    link = f"https://wa.me/{ph}?text={urllib.parse.quote(texto)}"
+                                    
+                                    # Mostrar botón de WhatsApp inmediatamente
+                                    st.markdown(f"""
+                                        <a href="{link}" target="_blank">
+                                            <button style="background-color:#25D366; color:white; border:none; padding:12px; width:100%; border-radius:10px; font-weight:bold; cursor:pointer;">
+                                                📲 ENVIAR COMPROBANTE WHATSAPP
+                                            </button>
+                                        </a>
+                                    """, unsafe_allow_html=True)
+                                
+                                fetch_fleet_data.clear()
+                                time.sleep(1) # Pequeña pausa para ver el botón
+                                st.rerun()
+                st.divider()
 
 def render_workshop(user, providers):
     st.header("🛠️ Taller")
@@ -394,12 +428,27 @@ def render_fleet_management(df, user):
             st.success("Borrado"); st.rerun()
 
 def render_directory(providers, user):
-    st.header("🏢 Directorio")
-    with st.expander("Nuevo"):
-        n=st.text_input("Nombre"); p=st.text_input("Tel"); t=st.selectbox("Tipo",["Mecánico","Comercio"])
-        if st.button("Guardar"): REFS["data"].collection("providers").add({"name":n,"phone":p,"type":t,"fleetId":user['fleet']}); st.rerun()
-    for p in providers: st.write(f"**{p['name']}** ({p['type']}) {p.get('phone')}")
-
+    st.header("🏢 Directorio de Proveedores")
+    with st.expander("➕ Nuevo Proveedor"):
+        with st.form("new_prov"):
+            n = st.text_input("Nombre").upper()
+            p = st.text_input("WhatsApp (ej: 098...)")
+            t = st.selectbox("Tipo", ["Mecánico", "Comercio"])
+            if st.form_submit_button("Guardar"):
+                REFS["data"].collection("providers").add({"name":n, "phone":p, "type":t, "fleetId":user['fleet']})
+                st.rerun()
+    
+    for p in providers:
+        with st.container(border=True):
+            c1, c2 = st.columns([3, 1])
+            c1.write(f"**{p['name']}** ({p['type']})")
+            if p.get('phone'):
+                ph = format_phone(p['phone'])
+                # Botón de WhatsApp directo
+                link = f"https://wa.me/{ph}?text=Hola {p['name']}, te escribo de la flota {user['fleet']}..."
+                c2.markdown(f'<a href="{link}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:8px; width:100%; border-radius:5px; font-weight:bold; cursor:pointer;">📲 WHATSAPP</button></a>', unsafe_allow_html=True)
+            else:
+                c2.write("Sin número")
 def main():
     if 'user' not in st.session_state: ui_render_login()
     else:
