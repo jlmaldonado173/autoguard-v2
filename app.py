@@ -32,18 +32,61 @@ st.set_page_config(page_title="Itero AI", layout="wide", page_icon="🚛")
 # Estilos CSS Profesionales (Tu código original)
 st.markdown(f"""
     <style>
-    .main-title {{ font-size: 60px; font-weight: 800; color: {UI_COLORS['primary']}; text-align: center; margin-top: -20px; }}
-    .stButton>button {{ width: 100%; border-radius: 8px; font-weight: bold; border: 1px solid #ddd; }}
-    div[data-testid="stSidebar"] .stButton:last-child button {{
-        background-color: {UI_COLORS['danger']}; color: white; border: none;
+    /* Título Principal */
+    .main-title {{ font-size: 65px; font-weight: 900; background: linear-gradient(45deg, #1E1E1E, #4A4A4A); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; margin-bottom: 20px; }}
+    
+    /* Botones Modernos de Streamlit (Generales) */
+    .stButton>button {{
+        width: 100%;
+        border-radius: 12px;
+        border: none;
+        padding: 12px 20px;
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        color: #1E1E1E;
+        font-weight: 700;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        transition: all 0.3s ease;
     }}
+    .stButton>button:hover {{
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e0 100%);
+        border: none;
+    }}
+
+    /* Botón Primario (Ingresar / Guardar) */
+    div.stButton > button:first-child[kind="primary"] {{
+        background: linear-gradient(135deg, #1e1e1e 0%, #434343 100%);
+        color: white;
+    }}
+
+    /* Botón de WhatsApp Custom */
+    .btn-whatsapp {{
+        display: inline-block;
+        background: linear-gradient(135deg, #25D366 0%, #128C7E 100%);
+        color: white !important;
+        text-decoration: none;
+        padding: 15px 25px;
+        border-radius: 12px;
+        font-weight: 800;
+        text-align: center;
+        width: 100%;
+        box-shadow: 0 4px 15px rgba(37, 211, 102, 0.3);
+        transition: all 0.3s ease;
+        border: none;
+    }}
+    .btn-whatsapp:hover {{
+        transform: scale(1.02);
+        box-shadow: 0 6px 20px rgba(37, 211, 102, 0.4);
+    }}
+
+    /* Tarjetas de Datos */
     .metric-box {{
-        background-color: {UI_COLORS['bg_metric']}; border-left: 5px solid {UI_COLORS['primary']}; 
-        padding: 15px; border-radius: 5px; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }}
-    .driver-card {{
-        padding: 20px; border-radius: 15px; color: white; text-align: center; 
-        box-shadow: 0 4px 15px rgba(0,0,0,0.2); margin-bottom: 20px;
+        background: white;
+        padding: 20px;
+        border-radius: 15px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+        border: 1px solid #f0f0f0;
     }}
     </style>
     """, unsafe_allow_html=True)
@@ -309,7 +352,8 @@ def render_super_admin():
 # --- 5. VISTAS PRINCIPALES ---
 def render_radar(df, user):
     st.subheader("📡 Radar de Flota")
-    if df.empty or 'bus' not in df.columns: st.info("⏳ Sin datos."); return
+    if df.empty or 'bus' not in df.columns: 
+        st.info("⏳ Sin datos actuales."); return
 
     buses = sorted(df['bus'].unique()) if user['role']=='owner' else [user['bus']]
     
@@ -319,37 +363,65 @@ def render_radar(df, user):
         if bus_df.empty: st.warning("Sin historial."); return
         latest = bus_df.iloc[0]; pending = bus_df[bus_df['km_next'] > 0]
         
-        color = "#28a745"; msg = "✅ OPERATIVO"; wa = ""
+        # Lógica de colores y estados
+        color = "#28a745"; msg = "✅ UNIDAD OPERATIVA"; wa = ""
         if not pending.empty:
             diff = pending.iloc[0]['km_next'] - latest['km_current']
-            if diff < 0: color = "#dc3545"; msg = f"🚨 VENCIDO: {pending.iloc[0]['category']}"; wa = f"Jefe, mi unidad {bus} tiene vencido {pending.iloc[0]['category']}."
-            elif diff <= 500: color = "#ffc107"; msg = f"⚠️ PRÓXIMO: {pending.iloc[0]['category']}"; wa = f"Jefe, al Bus {bus} le toca {pending.iloc[0]['category']} pronto."
+            if diff < 0: 
+                color = "linear-gradient(135deg, #FF4B4B 0%, #8B0000 100%)" # Rojo moderno
+                msg = f"🚨 VENCIDO: {pending.iloc[0]['category']}"
+                wa = f"Jefe, mi unidad {bus} tiene vencido {pending.iloc[0]['category']}."
+            elif diff <= 500: 
+                color = "linear-gradient(135deg, #ffc107 0%, #e67e22 100%)" # Naranja moderno
+                msg = f"⚠️ PRÓXIMO: {pending.iloc[0]['category']}"
+                wa = f"Jefe, al Bus {bus} le toca {pending.iloc[0]['category']} pronto."
+            else:
+                color = "linear-gradient(135deg, #28a745 0%, #1e7e34 100%)" # Verde moderno
 
-        st.markdown(f'<div class="driver-card" style="background-color:{color};"><h1>BUS {bus}</h1><h3>{msg}</h3><p style="font-size:50px; font-weight:800;">{latest["km_current"]:,.0f} KM</p></div>', unsafe_allow_html=True)
+        # Tarjeta de Conductor Moderna
+        st.markdown(f"""
+            <div class="driver-card" style="background:{color}; border:none; padding:30px;">
+                <h1 style="margin:0; font-size:45px; letter-spacing:-1px;">BUS {bus}</h1>
+                <h3 style="opacity:0.9; font-weight:400;">{msg}</h3>
+                <div style="background:rgba(255,255,255,0.2); display:inline-block; padding:10px 30px; border-radius:50px; margin-top:15px;">
+                    <span style="font-size:40px; font-weight:900;">{latest['km_current']:,.0f} KM</span>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
         if wa:
             link = f"https://wa.me/{format_phone(APP_CONFIG['BOSS_PHONE'])}?text={urllib.parse.quote(wa)}"
-            st.markdown(f'<a href="{link}" target="_blank"><button style="background-color:#25D366; color:white; border:none; padding:15px; width:100%; border-radius:10px; font-weight:bold;">📲 AVISAR AL JEFE</button></a>', unsafe_allow_html=True)
+            st.markdown(f'<a href="{link}" target="_blank" class="btn-whatsapp">📲 NOTIFICAR AL JEFE</a>', unsafe_allow_html=True)
+            st.write("") # Espaciador
         
         st.write("### 📜 Mi Historial")
         st.dataframe(bus_df[['date', 'category', 'observations', 'km_current']].head(10).assign(date=lambda x: x['date'].dt.strftime('%Y-%m-%d')), use_container_width=True, hide_index=True)
         return
 
+    # VISTA DUEÑO
     for bus in buses:
         bus_df = df[df['bus'] == bus].sort_values('date', ascending=False)
         if bus_df.empty: continue
         latest = bus_df.iloc[0]
-        color = "🟢"
+        
+        color_icon = "🟢"
         if not bus_df[bus_df['km_next'] > 0].empty:
             diff = bus_df[bus_df['km_next'] > 0].iloc[0]['km_next'] - latest['km_current']
-            if diff < 0: color = "🔴"
-            elif diff <= 500: color = "🟡"
+            if diff < 0: color_icon = "🔴"
+            elif diff <= 500: color_icon = "🟡"
 
-        with st.expander(f"{color} BUS {bus} | KM: {latest['km_current']:,.0f}"):
+        with st.expander(f"{color_icon} BUS {bus} | KM: {latest['km_current']:,.0f}"):
             c1, c2 = st.columns([2,1])
-            c1.dataframe(bus_df[['date', 'category', 'km_current', 'mec_cost']].head(3).assign(date=lambda x: x['date'].dt.strftime('%Y-%m-%d')), use_container_width=True, hide_index=True)
-            if c2.button(f"🤖 Diagnóstico IA", key=f"ai_{bus}"):
-                with st.spinner("Analizando bajo tus reglas..."):
-                    st.info(get_ai_analysis(bus_df, bus, user['fleet']))
+            with c1:
+                st.markdown('<div class="metric-box">', unsafe_allow_html=True)
+                st.dataframe(bus_df[['date', 'category', 'km_current', 'mec_cost']].head(3).assign(date=lambda x: x['date'].dt.strftime('%Y-%m-%d')), use_container_width=True, hide_index=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            with c2:
+                # Botón de IA con estilo moderno (usando el tipo primario de Streamlit que ya estilizamos)
+                if st.button(f"🤖 Diagnóstico IA", key=f"ai_{bus}", type="primary", use_container_width=True):
+                    with st.spinner("IA Analizando..."):
+                        st.info(get_ai_analysis(bus_df, bus, user['fleet']))
 
 def render_ai_training(user):
     st.header("🧠 Entrenar IA Itero")
@@ -383,59 +455,92 @@ def render_reports(df):
 
 def render_accounting(df, user, phone_map):
     st.header("💰 Contabilidad y Abonos")
+    
+    # Filtrar registros con deudas pendientes
     pend = df[(df['mec_cost'] > df['mec_paid']) | (df['com_cost'] > df['com_paid'])]
-    if pend.empty: st.success("🎉 Todo al día."); return
+    
+    if pend.empty:
+        st.success("🎉 Todo al día. No hay deudas pendientes.")
+        return
     
     for bus in sorted(pend['bus'].unique()):
-        with st.expander(f"🚌 Deudas Bus {bus}", expanded=True):
-            for _, r in pend[pend['bus'] == bus].iterrows():
-                st.write(f"**{r['category']}** ({r['date'].strftime('%d-%m-%Y')})")
+        # Expander moderno para cada Bus
+        with st.expander(f"🚌 DEUDAS BUS {bus}", expanded=True):
+            bus_pend = pend[pend['bus'] == bus].sort_values('date', ascending=False)
+            
+            for _, r in bus_pend.iterrows():
+                # Contenedor de tarjeta para cada trabajo
+                st.markdown(f"""
+                <div class="metric-box" style="margin-bottom:15px;">
+                    <p style="margin:0; color:#666; font-size:12px;">{r['date'].strftime('%d-%m-%Y')}</p>
+                    <h4 style="margin:0 0 10px 0;">{r['category']}</h4>
+                </div>
+                """, unsafe_allow_html=True)
+                
                 c1, c2 = st.columns(2)
                 
-                for t, cost, paid, name, lbl in [('m', 'mec_cost', 'mec_paid', 'mec_name', 'Mecánico'), ('c', 'com_cost', 'com_paid', 'com_name', 'Repuestos')]:
+                # Configuración de los dos tipos de deudas posibles por registro
+                deudas = [
+                    ('m', 'mec_cost', 'mec_paid', 'mec_name', '👨‍🔧 Mano de Obra'),
+                    ('c', 'com_cost', 'com_paid', 'com_name', '🛒 Repuestos/Comercio')
+                ]
+                
+                for t, cost, paid, name, lbl in deudas:
                     debt = r[cost] - r[paid]
-                    col = c1 if t=='m' else c2
+                    col = c1 if t == 'm' else c2
                     
                     if debt > 0:
-                        col.metric(lbl, f"${debt:,.2f}")
-                        if user['role'] == 'owner':
-                            # Input para el monto del abono
-                            v = col.number_input(f"Abonar a {r.get(name,'')}", key=f"{t}{r['id']}", max_value=float(debt), min_value=0.0)
+                        with col:
+                            # Visualización de la deuda
+                            st.metric(lbl, f"${debt:,.2f}", help=f"Proveedor: {r.get(name,'No asignado')}")
                             
-                            if col.button("Registrar Pago y Notificar", key=f"b_{t}{r['id']}"):
-                                # Lógica de actualización en DB
-                                REFS["data"].collection("logs").document(r['id']).update({paid: firestore.Increment(v)})
+                            if user['role'] == 'owner':
+                                # Input de abono con estilo
+                                v = st.number_input(
+                                    f"Abonar a {r.get(name,'')}", 
+                                    key=f"in_{t}{r['id']}", 
+                                    max_value=float(debt), 
+                                    min_value=0.0,
+                                    step=10.0
+                                )
                                 
-                                # Cálculo del nuevo saldo para el mensaje
-                                nuevo_saldo = debt - v
-                                ph = format_phone(phone_map.get(r.get(name),''))
-                                
-                                if ph:
-                                    # MENSAJE AUTOMÁTICO DETALLADO
-                                    texto = (
-                                        f"Hola *{r.get(name,'')}*, te envío el detalle del pago:\n\n"
-                                        f"✅ *Abono realizado:* ${v:,.2f}\n"
-                                        f"🚛 *Unidad:* Bus {bus}\n"
-                                        f"🔧 *Trabajo:* {r['category']}\n"
-                                        f"📉 *Saldo Pendiente:* ${nuevo_saldo:,.2f}\n\n"
-                                        f"Gracias por tu servicio."
-                                    )
+                                if st.button(f"Registrar Pago", key=f"btn_{t}{r['id']}", type="primary", use_container_width=True):
+                                    # 1. Actualización en Firebase
+                                    REFS["data"].collection("logs").document(r['id']).update({
+                                        paid: firestore.Increment(v)
+                                    })
                                     
-                                    link = f"https://wa.me/{ph}?text={urllib.parse.quote(texto)}"
+                                    # 2. Preparación del mensaje de WhatsApp
+                                    nuevo_saldo = debt - v
+                                    ph = format_phone(phone_map.get(r.get(name), ''))
                                     
-                                    # Mostrar botón de WhatsApp inmediatamente
-                                    st.markdown(f"""
-                                        <a href="{link}" target="_blank">
-                                            <button style="background-color:#25D366; color:white; border:none; padding:12px; width:100%; border-radius:10px; font-weight:bold; cursor:pointer;">
+                                    if ph:
+                                        texto = (
+                                            f"*PROBANTE DE PAGO - ITERO AI*\n"
+                                            f"--------------------------------\n"
+                                            f"Hola *{r.get(name,'')}*, se ha registrado un abono:\n\n"
+                                            f"✅ *Abono:* ${v:,.2f}\n"
+                                            f"🚛 *Unidad:* Bus {bus}\n"
+                                            f"🔧 *Detalle:* {r['category']} ({lbl})\n"
+                                            f"📉 *Saldo restante:* ${nuevo_saldo:,.2f}\n\n"
+                                            f" _Enviado desde Itero Master AI_ "
+                                        )
+                                        
+                                        link = f"https://wa.me/{ph}?text={urllib.parse.quote(texto)}"
+                                        
+                                        # 3. Mostrar botón moderno de WhatsApp
+                                        st.markdown(f"""
+                                            <a href="{link}" target="_blank" class="btn-whatsapp" style="text-decoration:none;">
                                                 📲 ENVIAR COMPROBANTE WHATSAPP
-                                            </button>
-                                        </a>
-                                    """, unsafe_allow_html=True)
-                                
-                                fetch_fleet_data.clear()
-                                time.sleep(1) # Pequeña pausa para ver el botón
-                                st.rerun()
-                st.divider()
+                                            </a>
+                                            <br>
+                                        """, unsafe_allow_html=True)
+                                    
+                                    st.success(f"Abono de ${v} registrado.")
+                                    fetch_fleet_data.clear()
+                                    time.sleep(2)
+                                    st.rerun()
+                st.markdown("---")
 
 def render_workshop(user, providers):
     st.header("🛠️ Taller")
