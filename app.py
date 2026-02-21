@@ -723,32 +723,68 @@ def render_directory(providers, user):
                             st.cache_data.clear()
                             st.success("Actualizado"); time.sleep(0.5); st.rerun()
 def main():
-    if 'user' not in st.session_state: ui_render_login()
+    if 'user' not in st.session_state: 
+        ui_render_login()
     else:
         u = st.session_state.user
-        if "LOGO_URL" in APP_CONFIG: st.sidebar.image(APP_CONFIG["LOGO_URL"], width=200)
+        if "LOGO_URL" in APP_CONFIG: 
+            st.sidebar.image(APP_CONFIG["LOGO_URL"], width=200)
+        
         st.sidebar.title(f"Itero: {u['name']}")
+        
+        # Filtro de fechas para los datos
         dr = st.sidebar.date_input("Fechas", [date.today() - timedelta(days=90), date.today()])
+        
+        # Carga de datos base
         provs, df = fetch_fleet_data(u['fleet'], u['role'], u['bus'], dr[0], dr[1])
         phone_map = {p['name']: p.get('phone', '') for p in provs}
 
-        menu = {
-            "🏠 Radar": lambda: render_radar(df, u),
-            "⛽ Combustible": render_fuel,
-            "📊 Reportes": lambda: render_reports(df),
-            "🛠️ Taller": lambda: render_workshop(u, provs),
-            "💰 Contabilidad": lambda: render_accounting(df, u, phone_map),
-            "🏢 Directorio": lambda: render_directory(provs, u)
-        }
-        if u['role']=='owner':
-            menu["👥 Personal"] = lambda: render_personnel(u)
-            menu["🚛 Gestión"] = lambda: render_fleet_management(df, u)
-            menu["🧠 Entrenar IA"] = lambda: render_ai_training(u)
-        
-        choice = st.sidebar.radio("Ir a:", list(menu.keys()))
-        st.divider(); menu[choice]()
-        if not df.empty:
-            st.sidebar.download_button("📥 Bajar Excel", df.to_csv(index=False).encode('utf-8'), "reporte.csv")
-        if st.sidebar.button("Salir"): st.session_state.clear(); st.rerun()
+        # --- LÓGICA PARA CONDUCTOR ---
+        if u['role'] == 'driver':
+            # 1. Radar siempre arriba
+            render_radar(df, u)
+            st.divider()
+            # 2. COMBUSTIBLE SIEMPRE ABIERTO (De primero para el chofer)
+            render_fuel_conductor() 
+            st.divider()
+            
+            # 3. Menú de opciones adicionales para el Conductor (Incluye Directorio)
+            menu_driver = {
+                "📊 Mis Reportes": lambda: render_reports(df),
+                "🛠️ Reportar Taller": lambda: render_workshop(u, provs),
+                "🏢 Directorio": lambda: render_directory(provs, u) # <--- Agregado para conductor
+            }
+            choice = st.sidebar.radio("Más opciones:", list(menu_driver.keys()))
+            menu_driver[choice]()
 
-if __name__ == "__main__": main()
+        # --- LÓGICA PARA DUEÑO ---
+        else:
+            # 1. Radar siempre arriba para monitorear
+            render_radar(df, u)
+            st.divider()
+            
+            # 2. Menú completo para el Dueño
+            menu_owner = {
+                "⛽ Combustible": render_fuel_compact, # Dueño lo ve compacto
+                "📊 Reportes": lambda: render_reports(df),
+                "🛠️ Taller": lambda: render_workshop(u, provs),
+                "💰 Contabilidad": lambda: render_accounting(df, u, phone_map),
+                "🏢 Directorio": lambda: render_directory(provs, u),
+                "👥 Personal": lambda: render_personnel(u),
+                "🚛 Gestión": lambda: render_fleet_management(df, u),
+                "🧠 Entrenar IA": lambda: render_ai_training(u)
+            }
+            choice = st.sidebar.radio("Ir a:", list(menu_owner.keys()))
+            menu_owner[choice]()
+        
+        # --- BOTONES DE PIE DE BARRA LATERAL ---
+        st.sidebar.divider()
+        if not df.empty:
+            st.sidebar.download_button("📥 Bajar Excel", df.to_csv(index=False).encode('utf-8'), "reporte.csv", use_container_width=True)
+        
+        if st.sidebar.button("Cerrar Sesión", use_container_width=True): 
+            st.session_state.clear()
+            st.rerun()
+
+if __name__ == "__main__":
+    main()
