@@ -599,14 +599,23 @@ def render_fleet_management(df, user):
                 REFS["data"].collection("logs").document(d.id).update({"bus": new})
             st.success("Nombre actualizado"); st.rerun()
 
-    # --- BLOQUE 2: BORRAR ---
+# --- BLOQUE 2: BORRAR (CORREGIDO) ---
     with c2.container(border=True):
         st.subheader("🗑️ Borrar Historial")
         dbus = st.selectbox("Eliminar unidad", buses, key="del_bus")
         if st.button("ELIMINAR TODO EL HISTORIAL", type="secondary"):
-            for d in REFS["data"].collection("logs").where("fleetId","==",user['fleet']).where("bus","==",dbus).stream():
+            # 1. Borrar de la base de datos
+            docs = REFS["data"].collection("logs").where("fleetId","==",user['fleet']).where("bus","==",dbus).stream()
+            for d in docs:
                 REFS["data"].collection("logs").document(d.id).delete()
-            st.success("Historial borrado"); st.rerun()
+            
+            # 2. LIMPIAR LA CACHE (Esto es lo que te falta)
+            st.cache_data.clear() 
+            
+            # 3. Notificar y refrescar
+            st.success(f"✅ Historial de la unidad {dbus} borrado por completo")
+            time.sleep(1) # Un pequeño respiro para el sistema
+            st.rerun()
 
     st.divider()
 
