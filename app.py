@@ -658,56 +658,62 @@ def render_fleet_management(df, user):
 def render_directory(providers, user):
     st.header("🏢 Directorio de Proveedores")
     
-    # Solo el Administrador puede añadir o gestionar
+    # 1. Botón para añadir nuevo (Solo Dueño)
     if user['role'] == 'owner':
-        with st.expander("➕ Registrar Nuevo Proveedor", expanded=False):
-            with st.form("new_prov"):
-                n = st.text_input("Nombre / Razón Social").upper()
+        with st.expander("➕ Registrar Nuevo Maestro / Proveedor", expanded=False):
+            with st.form("new_prov_form"):
+                n = st.text_input("Nombre Completo / Taller").upper()
                 p = st.text_input("WhatsApp (ej: 0990000000)")
-                t = st.selectbox("Especialidad", ["Mecánico", "Comercio", "Llantas", "Eléctrico", "Otro"])
+                t = st.selectbox("Especialidad", ["Mecánico", "Comercio", "Llantas", "Frenos", "Electricista", "Otro"])
                 if st.form_submit_button("Guardar Proveedor", type="primary"):
                     if n and p:
                         REFS["data"].collection("providers").add({
                             "name": n, "phone": p, "type": t, "fleetId": user['fleet']
                         })
-                        st.success("✅ Proveedor guardado"); st.rerun()
-                    else: st.warning("Completa nombre y teléfono.")
+                        st.success("✅ Guardado correctamente"); time.sleep(1); st.rerun()
+                    else: st.error("Faltan datos.")
 
     if not providers:
         st.info("Aún no tienes proveedores registrados.")
         return
 
-    # Listado de Proveedores con Edición y Borrado
+    # 2. Lista Interactiva con Edición y Borrado
     for p in providers:
         with st.container(border=True):
-            c1, c2, c3 = st.columns([3, 1, 1])
+            col_info, col_wa, col_edit, col_del = st.columns([3, 1, 1, 1])
             
-            # Columna 1: Información
-            c1.markdown(f"### {p['name']}")
-            c1.caption(f"🏷️ {p['type']} | 📞 {p.get('phone', 'S/N')}")
+            # Información del Proveedor
+            col_info.markdown(f"**{p['name']}**")
+            col_info.caption(f"🔧 {p['type']} | 📞 {p.get('phone', 'S/N')}")
             
-            # Columna 2: WhatsApp (Diseño moderno)
+            # Botón WhatsApp (Diseño Moderno)
             if p.get('phone'):
                 ph = format_phone(p['phone'])
                 link = f"https://wa.me/{ph}?text=Hola {p['name']}, te contacto de la flota {user['fleet']}..."
-                c2.markdown(f'<a href="{link}" target="_blank" class="btn-whatsapp" style="padding:10px; font-size:12px; text-align:center;">📲 CHATEAR</a>', unsafe_allow_html=True)
+                col_wa.markdown(f'<a href="{link}" target="_blank" class="btn-whatsapp" style="padding:8px 12px; font-size:11px; text-decoration:none; display:block; text-align:center;">📲 CHAT</a>', unsafe_allow_html=True)
             
-            # Columna 3: Gestión (Solo Dueño)
+            # Gestión (Solo Dueño puede ver botones de editar/borrar)
             if user['role'] == 'owner':
-                # Botón para borrar
-                if c3.button("🗑️ Borrar", key=f"delp_{p['id']}"):
-                    REFS["data"].collection("providers").document(p['id']).delete()
-                    st.success(f"Eliminado: {p['name']}"); time.sleep(1); st.rerun()
+                # Botón Editar (Abre un expander específico abajo)
+                with col_edit:
+                    edit_mode = st.checkbox("✏️", key=f"check_{p['id']}", help="Editar datos")
                 
-                # Formulario para editar (Expander dentro de la lista)
-                with st.expander("✏️ Editar Datos"):
-                    with st.form(f"edit_p_{p['id']}"):
+                # Botón Borrar
+                if col_del.button("🗑️", key=f"del_{p['id']}", help="Eliminar permanentemente"):
+                    REFS["data"].collection("providers").document(p['id']).delete()
+                    st.toast(f"Eliminado: {p['name']}")
+                    time.sleep(1); st.rerun()
+
+                # Formulario de Edición (Solo aparece si marcas el checkbox del lápiz)
+                if edit_mode:
+                    with st.form(f"edit_form_{p['id']}"):
+                        st.write(f"Editar a: {p['name']}")
                         new_n = st.text_input("Nombre", value=p['name']).upper()
-                        new_p = st.text_input("Teléfono", value=p.get('phone',''))
-                        new_t = st.selectbox("Tipo", ["Mecánico", "Comercio", "Llantas", "Eléctrico", "Otro"], 
-                                           index=["Mecánico", "Comercio", "Llantas", "Eléctrico", "Otro"].index(p['type']) if p['type'] in ["Mecánico", "Comercio", "Llantas", "Eléctrico", "Otro"] else 0)
+                        new_p = st.text_input("WhatsApp", value=p.get('phone',''))
+                        new_t = st.selectbox("Tipo", ["Mecánico", "Comercio", "Llantas", "Frenos", "Electricista", "Otro"], 
+                                           index=["Mecánico", "Comercio", "Llantas", "Frenos", "Electricista", "Otro"].index(p['type']) if p['type'] in ["Mecánico", "Comercio", "Llantas", "Frenos", "Electricista", "Otro"] else 0)
                         
-                        if st.form_submit_button("Actualizar"):
+                        if st.form_submit_button("Actualizar Datos"):
                             REFS["data"].collection("providers").document(p['id']).update({
                                 "name": new_n, "phone": new_p, "type": new_t
                             })
