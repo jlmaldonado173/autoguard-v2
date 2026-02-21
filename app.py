@@ -195,18 +195,51 @@ def ui_render_login():
 def handle_login(f_in, u_in, r_in, pass_in):
     if not REFS: st.error("Offline"); return
     doc = REFS["fleets"].document(f_in).get()
-    if not doc.exists: st.error("❌ Flota no encontrada."); return
+    
+    if not doc.exists: 
+        st.error("❌ Código de flota no registrado.")
+        return
+        
     data = doc.to_dict()
     
-    # --- MENSAJE DE SUSPENSIÓN PERSONALIZADO ---
+    # --- BLOQUE DE SUSPENSIÓN CORDIAL ---
     if data.get('status') == 'suspended':
-        # Intentamos traer el contacto de soporte desde la DB
-        sup_doc = REFS["data"].get()
-        contacto = sup_doc.to_dict().get("support_contact", "el administrador") if sup_doc.exists else "soporte@itero.ai"
+        # Buscamos el contacto que guardaste en el Super Admin
+        sup_snap = REFS["data"].get()
+        # Si no has guardado nada aún, usa tus datos por defecto
+        contacto_maestro = "jlmaldonado173@gmail.com o 0964014007"
+        contacto = sup_snap.to_dict().get("support_contact", contacto_maestro) if sup_snap.exists else contacto_maestro
         
-        st.error(f"🚫 CUENTA SUSPENDIDA. Por favor, comuníquese con: {contacto}")
+        st.warning(f"""
+            ### ℹ️ Aviso de Cuenta
+            Estimado usuario, su acceso a **Itero AI** se encuentra temporalmente inactivo. 
+            Queremos que siga gestionando su flota con la mejor tecnología, por lo cual, para reactivar sus servicios, le invitamos cordialmente a ponerse en contacto con nuestra administración:
+            
+            📧 **{contacto}**
+            
+            Estaremos encantados de ayudarle a continuar con su operación.
+        """)
         return
-    # -------------------------------------------
+    # ------------------------------------
+
+    access = False; role = ""; assigned_bus = "0"
+    if "Adm" in r_in:
+        if data.get('password') == pass_in: 
+            access = True; role = 'owner'
+        else: 
+            st.error("🔒 Contraseña incorrecta.")
+    else:
+        # Login ciego para conductor
+        auth = REFS["fleets"].document(f_in).collection("authorized_users").document(u_in).get()
+        if auth.exists and auth.to_dict().get('active', True): 
+            access = True; role = 'driver'
+            assigned_bus = auth.to_dict().get('bus', '0')
+        else: 
+            st.error("❌ Usuario no autorizado.")
+
+    if access:
+        st.session_state.user = {'role': role, 'fleet': f_in, 'name': u_in, 'bus': assigned_bus}
+        st.rerun()
 
     # ... resto del código de login ...
 
@@ -223,28 +256,40 @@ def render_super_admin():
     if not REFS: return
     st.header("⚙️ Panel de Control Maestro (Super Admin)")
     
-    # Configuración de contacto para flotas bloqueadas
-    with st.expander("🛠️ Configuración de Mensaje de Bloqueo", expanded=False):
-        c_msg = st.text_input("Número o Correo de contacto para soporte", value="soporte@itero.ai")
-        if st.button("Guardar Contacto Soporte"):
-            REFS["data"].update({"support_contact": c_msg})
-            st.success("Contacto actualizado")
+    # 1. Configuración de contacto (CORRECCIÓN DEL ERROR NOTFOUND)
+    with st.expander("🛠️ Configuración de Mensaje de Bloqueo", expanded=True):
+        # Datos predeterminados solicitados
+        msg_default = "jlmaldonado173@gmail.com o llame al 0964014007"
+        
+        # Intentamos traer el valor actual si existe
+        doc_snap = REFS["data"].get()
+        current_msg = doc_snap.to_dict().get("support_contact", msg_default) if doc_snap.exists else msg_default
+        
+        c_msg = st.text_input("Contacto de soporte para flotas suspendidas", value=current_msg)
+        
+        if st.button("Guardar Contacto Maestro"):
+            # USAMOS .set con merge=True para que si no existe el documento, lo cree sin error
+            REFS["data"].set({"support_contact": c_msg}, merge=True)
+            st.success("✅ ¡Contacto guardado! Este mensaje aparecerá a las flotas bloqueadas.")
 
     st.subheader("🏢 Gestión de Empresas Registradas")
     
+    # 2. Listado de flotas
     for f in REFS["fleets"].stream():
         d = f.to_dict()
-        # Contar unidades de esta flota
+        
+        # Conteo de unidades real de esta flota
         unidades = REFS["data"].collection("logs").where("fleetId", "==", f.id).stream()
-        bus_list = set([u.to_dict().get('bus') for u in unidades])
+        bus_list = set([u.to_dict().get('bus') for u in unidades if u.to_dict().get('bus')])
         total_buses = len(bus_list)
 
         with st.expander(f"Empresa: {f.id} | Dueño: {d.get('owner')} | 🚛 {total_buses} Unidades", expanded=False):
             c1, c2, c3 = st.columns(3)
             
-            # Control de Estado
+            # Control de Estado (Suspender/Activar)
             is_active = d.get('status') == 'active'
-            if c1.button("SUSPENDER" if is_active else "ACTIVAR", key=f"s_{f.id}"):
+            label = "🔴 SUSPENDER" if is_active else "🟢 ACTIVAR"
+            if c1.button(label, key=f"s_{f.id}"):
                 REFS["fleets"].document(f.id).update({"status": "suspended" if is_active else "active"})
                 st.rerun()
             
@@ -253,14 +298,14 @@ def render_super_admin():
             if c2.button("Cambiar Password", key=f"bp_{f.id}"):
                 if new_pass:
                     REFS["fleets"].document(f.id).update({"password": new_pass})
-                    st.success("Clave actualizada")
-                else: st.error("Escribe una clave")
+                    st.success("🔑 Clave actualizada")
+                else: 
+                    st.error("Escribe una clave")
 
-            # Peligro
+            # Peligro: Eliminar
             if c3.button("🗑️ ELIMINAR FLOTA", key=f"del_{f.id}"):
                 REFS["fleets"].document(f.id).delete()
                 st.rerun()
-
 # --- 5. VISTAS PRINCIPALES ---
 def render_radar(df, user):
     st.subheader("📡 Radar de Flota")
