@@ -658,7 +658,7 @@ def render_fleet_management(df, user):
 def render_directory(providers, user):
     st.header("🏢 Directorio de Proveedores")
     
-    # 1. Botón para añadir nuevo (Solo Dueño)
+    # 1. Registro de Nuevo (Solo Dueño)
     if user['role'] == 'owner':
         with st.expander("➕ Registrar Nuevo Maestro / Proveedor", expanded=False):
             with st.form("new_prov_form"):
@@ -670,54 +670,58 @@ def render_directory(providers, user):
                         REFS["data"].collection("providers").add({
                             "name": n, "phone": p, "type": t, "fleetId": user['fleet']
                         })
-                        st.success("✅ Guardado correctamente"); time.sleep(1); st.rerun()
+                        st.cache_data.clear() # Limpia cache para ver el nuevo
+                        st.success("✅ Guardado"); time.sleep(0.5); st.rerun()
                     else: st.error("Faltan datos.")
 
     if not providers:
         st.info("Aún no tienes proveedores registrados.")
         return
 
-    # 2. Lista Interactiva con Edición y Borrado
+    # 2. Lista de Proveedores
     for p in providers:
+        p_id = p.get('id')
         with st.container(border=True):
-            col_info, col_wa, col_edit, col_del = st.columns([3, 1, 1, 1])
+            # En móvil usamos 2 filas para que los botones sean grandes
+            col_info, col_wa = st.columns([2, 1])
             
-            # Información del Proveedor
             col_info.markdown(f"**{p['name']}**")
             col_info.caption(f"🔧 {p['type']} | 📞 {p.get('phone', 'S/N')}")
             
-            # Botón WhatsApp (Diseño Moderno)
             if p.get('phone'):
                 ph = format_phone(p['phone'])
-                link = f"https://wa.me/{ph}?text=Hola {p['name']}, te contacto de la flota {user['fleet']}..."
-                col_wa.markdown(f'<a href="{link}" target="_blank" class="btn-whatsapp" style="padding:8px 12px; font-size:11px; text-decoration:none; display:block; text-align:center;">📲 CHAT</a>', unsafe_allow_html=True)
-            
-            # Gestión (Solo Dueño puede ver botones de editar/borrar)
-            if user['role'] == 'owner':
-                # Botón Editar (Abre un expander específico abajo)
-                with col_edit:
-                    edit_mode = st.checkbox("✏️", key=f"check_{p['id']}", help="Editar datos")
-                
-                # Botón Borrar
-                if col_del.button("🗑️", key=f"del_{p['id']}", help="Eliminar permanentemente"):
-                    REFS["data"].collection("providers").document(p['id']).delete()
-                    st.toast(f"Eliminado: {p['name']}")
-                    time.sleep(1); st.rerun()
+                link = f"https://wa.me/{ph}?text=Hola {p['name']}..."
+                col_wa.markdown(f'<a href="{link}" target="_blank" class="btn-whatsapp" style="padding:10px; text-decoration:none; display:block; text-align:center; border-radius:10px; font-size:12px;">📲 CHAT</a>', unsafe_allow_html=True)
 
-                # Formulario de Edición (Solo aparece si marcas el checkbox del lápiz)
+            # Fila de Gestión (Solo Dueño)
+            if user['role'] == 'owner':
+                c_edit, c_del = st.columns(2)
+                
+                # Botón Editar
+                edit_mode = c_edit.checkbox("✏️ Editar", key=f"ed_{p_id}")
+                
+                # BOTÓN BORRAR REFORZADO
+                if c_del.button("🗑️ Eliminar", key=f"del_{p_id}", use_container_width=True):
+                    REFS["data"].collection("providers").document(p_id).delete()
+                    st.cache_data.clear() # ESTO ES LO QUE HACE QUE SE BORRE DE VERDAD EN PANTALLA
+                    st.toast(f"Eliminado: {p['name']}")
+                    time.sleep(0.5)
+                    st.rerun()
+
+                # Formulario de Edición
                 if edit_mode:
-                    with st.form(f"edit_form_{p['id']}"):
-                        st.write(f"Editar a: {p['name']}")
+                    with st.form(f"f_ed_{p_id}"):
                         new_n = st.text_input("Nombre", value=p['name']).upper()
                         new_p = st.text_input("WhatsApp", value=p.get('phone',''))
                         new_t = st.selectbox("Tipo", ["Mecánico", "Comercio", "Llantas", "Frenos", "Electricista", "Otro"], 
                                            index=["Mecánico", "Comercio", "Llantas", "Frenos", "Electricista", "Otro"].index(p['type']) if p['type'] in ["Mecánico", "Comercio", "Llantas", "Frenos", "Electricista", "Otro"] else 0)
                         
-                        if st.form_submit_button("Actualizar Datos"):
-                            REFS["data"].collection("providers").document(p['id']).update({
+                        if st.form_submit_button("Actualizar"):
+                            REFS["data"].collection("providers").document(p_id).update({
                                 "name": new_n, "phone": new_p, "type": new_t
                             })
-                            st.success("Actualizado"); time.sleep(1); st.rerun()
+                            st.cache_data.clear()
+                            st.success("Actualizado"); time.sleep(0.5); st.rerun()
 def main():
     if 'user' not in st.session_state: ui_render_login()
     else:
