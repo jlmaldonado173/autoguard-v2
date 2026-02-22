@@ -709,24 +709,65 @@ def render_fuel():
             fetch_fleet_data.clear(); st.success("OK"); st.rerun()
 
 def render_personnel(user):
-    st.header("👥 Personal")
-    with st.expander("➕ Nuevo Conductor"):
+    st.header("👥 Gestión de Personal")
+    
+    # 1. Formulario para Nuevo Usuario (Conductor o Mecánico)
+    with st.expander("➕ Registrar Nuevo Personal"):
         with st.form("nd"):
-            nm = st.text_input("Nombre").upper(); te = st.text_input("Tel"); bs = st.text_input("Bus")
-            if st.form_submit_button("Crear"):
-                REFS["fleets"].document(user['fleet']).collection("authorized_users").document(nm).set({"active":True,"phone":te,"bus":bs,"role":"driver"})
-                st.rerun()
-    for us in REFS["fleets"].document(user['fleet']).collection("authorized_users").stream():
+            nm = st.text_input("Nombre / Usuario").upper()
+            te = st.text_input("Teléfono")
+            
+            # Selector de ROL: Esto es lo que permite que el sistema sepa quién es mecánico
+            rol = st.selectbox("Rol", ["driver", "mechanic"], format_func=lambda x: "🚛 Conductor" if x == "driver" else "🛠️ Mecánico")
+            
+            bs = st.text_input("Bus Asignado (Poner 0 para Mecánicos)")
+            
+            if st.form_submit_button("Crear Usuario", type="primary"):
+                if nm:
+                    REFS["fleets"].document(user['fleet']).collection("authorized_users").document(nm).set({
+                        "active": True,
+                        "phone": te,
+                        "bus": bs,
+                        "role": rol # Guardamos el rol elegido
+                    })
+                    st.cache_data.clear()
+                    st.success(f"Usuario {nm} creado como {rol}")
+                    st.rerun()
+                else:
+                    st.error("El nombre es obligatorio")
+
+    st.divider()
+    st.subheader("📋 Lista de Personal Autorizado")
+
+    # 2. Lista de usuarios existentes
+    usuarios = REFS["fleets"].document(user['fleet']).collection("authorized_users").stream()
+    
+    for us in usuarios:
         d = us.to_dict()
-        if d.get('role') != 'admin':
+        # No mostramos al admin en la lista para evitar errores
+        if d.get('role') != 'owner' and d.get('role') != 'admin':
             with st.container(border=True):
                 c1, c2, c3 = st.columns([3, 2, 1])
-                c1.write(f"**{us.id}** ({'Activo' if d.get('active') else 'Inactivo'})")
+                
+                # Identificamos visualmente el rol
+                emoji = "🛠️" if d.get('role') == 'mechanic' else "🚛"
+                c1.markdown(f"{emoji} **{us.id}**")
+                c1.caption(f"Rol: {d.get('role')} | 📱 {d.get('phone')}")
+                
+                # Edición de unidad asignada
                 nb = c2.text_input("Unidad", value=d.get('bus',''), key=f"b_{us.id}")
+                
+                # Guardar cambios o Borrar
                 if nb != d.get('bus',''):
-                    if c2.button("💾", key=f"s_{us.id}"): REFS["fleets"].document(user['fleet']).collection("authorized_users").document(us.id).update({"bus": nb}); st.rerun()
-                if c3.button("🗑️", key=f"d_{us.id}"): REFS["fleets"].document(user['fleet']).collection("authorized_users").document(us.id).delete(); st.rerun()
-
+                    if c2.button("💾", key=f"s_{us.id}"): 
+                        REFS["fleets"].document(user['fleet']).collection("authorized_users").document(us.id).update({"bus": nb})
+                        st.cache_data.clear()
+                        st.rerun()
+                
+                if c3.button("🗑️", key=f"d_{us.id}"): 
+                    REFS["fleets"].document(user['fleet']).collection("authorized_users").document(us.id).delete()
+                    st.cache_data.clear()
+                    st.rerun()
 def render_fleet_management(df, user):
     st.header("🚛 Gestión de Flota")
     buses = sorted(df['bus'].unique())
