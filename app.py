@@ -90,7 +90,7 @@ UI_COLORS = {
 }
 
 # Corregido de Itaro a Itero
-st.set_page_config(page_title="Itero AI", layout="wide", page_icon="🚛")
+st.set_page_config(page_title="Itero", layout="wide", page_icon="🚛")
 
 # Estilos CSS Profesionales (Tu código original)
 st.markdown(f"""
@@ -851,70 +851,91 @@ def render_fleet_management(df, user):
 def render_directory(providers, user):
     st.header("🏢 Directorio de Proveedores")
     
-    # 1. Registro de Nuevo (Solo Dueño)
+    # 1. REGISTRO DE NUEVO (Solo Dueño)
+    # Agregamos clear_on_submit=True para vaciar las cajas al guardar
     if user['role'] == 'owner':
         with st.expander("➕ Registrar Nuevo Maestro / Proveedor", expanded=False):
-            with st.form("new_prov_form"):
+            with st.form("new_prov_form", clear_on_submit=True):
                 n = st.text_input("Nombre Completo / Taller").upper()
                 p = st.text_input("WhatsApp (ej: 0990000000)")
                 t = st.selectbox("Especialidad", ["Mecánico", "Comercio", "Llantas", "Frenos", "Electricista", "Otro"])
+                
                 if st.form_submit_button("Guardar Proveedor", type="primary"):
                     if n and p:
                         REFS["data"].collection("providers").add({
                             "name": n, "phone": p, "type": t, "fleetId": user['fleet']
                         })
-                        st.cache_data.clear() # Limpia cache para ver el nuevo
-                        st.success("✅ Guardado"); time.sleep(0.5); st.rerun()
-                    else: st.error("Faltan datos.")
+                        st.cache_data.clear() 
+                        st.success("✅ Guardado con éxito")
+                        time.sleep(1)
+                        st.rerun()
+                    else: 
+                        st.error("Faltan datos obligatorios (Nombre y WhatsApp).")
 
     if not providers:
         st.info("Aún no tienes proveedores registrados.")
         return
 
-    # 2. Lista de Proveedores
+    # 2. LISTA DE PROVEEDORES (Visualización para todos los roles)
     for p in providers:
         p_id = p.get('id')
         with st.container(border=True):
-            # En móvil usamos 2 filas para que los botones sean grandes
             col_info, col_wa = st.columns([2, 1])
             
             col_info.markdown(f"**{p['name']}**")
             col_info.caption(f"🔧 {p['type']} | 📞 {p.get('phone', 'S/N')}")
             
+            # Botón de WhatsApp
             if p.get('phone'):
-                ph = format_phone(p['phone'])
-                link = f"https://wa.me/{ph}?text=Hola {p['name']}..."
-                col_wa.markdown(f'<a href="{link}" target="_blank" class="btn-whatsapp" style="padding:10px; text-decoration:none; display:block; text-align:center; border-radius:10px; font-size:12px;">📲 CHAT</a>', unsafe_allow_html=True)
+                # Función auxiliar para limpiar el número (debes tenerla definida)
+                ph = "".join(filter(str.isdigit, p['phone']))
+                if ph.startswith('0'): ph = '593' + ph[1:] # Ajuste para Ecuador
+                
+                link = f"https://wa.me/{ph}?text=Hola%20{p['name']}"
+                col_wa.markdown(
+                    f'<a href="{link}" target="_blank" style="text-decoration:none;">'
+                    f'<div style="background-color:#25D366; color:white; padding:8px; border-radius:10px; text-align:center; font-weight:bold;">'
+                    f'📲 CHAT</div></a>', 
+                    unsafe_allow_html=True
+                )
 
-            # Fila de Gestión (Solo Dueño)
+            # 3. GESTIÓN DE PROVEEDOR (Solo Dueño)
             if user['role'] == 'owner':
+                st.divider()
                 c_edit, c_del = st.columns(2)
                 
-                # Botón Editar
-                edit_mode = c_edit.checkbox("✏️ Editar", key=f"ed_{p_id}")
+                # Checkbox para abrir edición
+                edit_mode = c_edit.checkbox("✏️ Editar", key=f"ed_check_{p_id}")
                 
-                # BOTÓN BORRAR REFORZADO
-                if c_del.button("🗑️ Eliminar", key=f"del_{p_id}", use_container_width=True):
+                # Borrado directo
+                if c_del.button("🗑️ Eliminar", key=f"del_btn_{p_id}", use_container_width=True):
                     REFS["data"].collection("providers").document(p_id).delete()
-                    st.cache_data.clear() # ESTO ES LO QUE HACE QUE SE BORRE DE VERDAD EN PANTALLA
+                    st.cache_data.clear()
                     st.toast(f"Eliminado: {p['name']}")
                     time.sleep(0.5)
                     st.rerun()
 
-                # Formulario de Edición
+                # Formulario de Edición (Aparece solo si el checkbox está activo)
                 if edit_mode:
                     with st.form(f"f_ed_{p_id}"):
                         new_n = st.text_input("Nombre", value=p['name']).upper()
                         new_p = st.text_input("WhatsApp", value=p.get('phone',''))
-                        new_t = st.selectbox("Tipo", ["Mecánico", "Comercio", "Llantas", "Frenos", "Electricista", "Otro"], 
-                                           index=["Mecánico", "Comercio", "Llantas", "Frenos", "Electricista", "Otro"].index(p['type']) if p['type'] in ["Mecánico", "Comercio", "Llantas", "Frenos", "Electricista", "Otro"] else 0)
                         
-                        if st.form_submit_button("Actualizar"):
+                        # Lista de tipos para el index
+                        tipos = ["Mecánico", "Comercio", "Llantas", "Frenos", "Electricista", "Otro"]
+                        idx = tipos.index(p['type']) if p['type'] in tipos else 0
+                        
+                        new_t = st.selectbox("Tipo", tipos, index=idx)
+                        
+                        if st.form_submit_button("💾 Guardar Cambios"):
                             REFS["data"].collection("providers").document(p_id).update({
-                                "name": new_n, "phone": new_p, "type": new_t
+                                "name": new_n, 
+                                "phone": new_p, 
+                                "type": new_t
                             })
                             st.cache_data.clear()
                             st.success("Actualizado"); time.sleep(0.5); st.rerun()
+
 def render_mechanic_work(user, bus_id, providers):
     st.info(f"Registrando trabajo para la Unidad: **{bus_id}**")
     
