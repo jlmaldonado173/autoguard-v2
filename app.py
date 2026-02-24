@@ -925,7 +925,7 @@ def render_mechanic_work(user, df, providers):
     
     bus_id = st.selectbox("🚛 Seleccionar Unidad a Reparar", buses_disponibles)
     
-    # --- MEJORA 1: Mostrar último KM para ayudar al mecánico ---
+    # Mostrar último KM para ayudar al mecánico
     bus_df = df[df['bus'] == bus_id] if not df.empty and 'bus' in df.columns else pd.DataFrame()
     last_km = int(bus_df['km_current'].max()) if not bus_df.empty and 'km_current' in bus_df.columns else 0
     
@@ -937,25 +937,23 @@ def render_mechanic_work(user, df, providers):
         cat = st.selectbox("Categoría del Daño", ["Mecánica", "Eléctrica", "Frenos", "Suspensión", "Motor", "Llantas", "Otro"])
         obs = st.text_area("Informe Técnico", placeholder="Describa el daño encontrado y la solución...")
         
-        # --- MEJORA 2 y 3: Campos de Kilometraje y Alertas Programables ---
+        # --- SOLUCIÓN: Los campos siempre visibles ---
         st.divider()
         st.write("⏱️ **Control de Kilometraje y Alertas**")
         c_km1, c_km2 = st.columns(2)
         
         km_actual = c_km1.number_input("Kilometraje Actual del Bus", min_value=0, value=last_km, step=100)
         
-        programar = c_km2.checkbox("🔔 Programar próximo mantenimiento (Aviso)")
-        km_proximo = 0
-        if programar:
-            km_proximo = c_km2.number_input("Avisar a los (KM)", min_value=km_actual, value=km_actual + 5000, step=500, help="El Radar se pondrá rojo cuando el bus llegue a este kilometraje.")
+        # El campo de aviso aparece siempre. Si no hay aviso, el mecánico lo deja en 0.
+        km_proximo = c_km2.number_input("Avisar próximo a los (KM)", min_value=0, value=0, step=500, help="Ingresa a qué KM el radar se pondrá rojo. Deja en 0 si es un arreglo que no necesita aviso futuro.")
         
         st.divider()
+        st.write("💰 **Costos y Repuestos**")
         c1, c2 = st.columns(2)
         mo_cost = c1.number_input("Costo Mano de Obra $", min_value=0.0)
         
-        st.write("🛒 **Repuestos Utilizados**")
-        store_name = st.selectbox("Comprado en:", ["N/A"] + coms)
-        rep_cost = st.number_input("Costo de Repuestos $", min_value=0.0)
+        store_name = c2.selectbox("Comprado en:", ["N/A"] + coms)
+        rep_cost = c2.number_input("Costo de Repuestos $", min_value=0.0)
         
         foto = st.camera_input("Capturar evidencia del trabajo", key=f"mech_cam_{bus_id}")
         
@@ -974,8 +972,8 @@ def render_mechanic_work(user, df, providers):
                     "date": datetime.now().isoformat(),
                     "category": cat,
                     "observations": f"REPORTE MECÁNICO ({user['name']}): {obs}",
-                    "km_current": km_actual,  # <-- AHORA SE GUARDA EL REAL
-                    "km_next": km_proximo,    # <-- AHORA SE GUARDA LA ALERTA
+                    "km_current": km_actual,  # <-- KM REAL
+                    "km_next": km_proximo,    # <-- KM DE ALERTA (0 si no hay)
                     "mec_name": user['name'], 
                     "mec_cost": mo_cost,
                     "mec_paid": 0, 
