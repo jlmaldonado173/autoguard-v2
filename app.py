@@ -332,9 +332,20 @@ def render_radar(df, user):
             with st.spinner("IA Analizando tu unidad..."):
                 st.info(get_ai_analysis(bus_df, bus, user['fleet']))
 
+        # --- LÓGICA NUEVA: WHATSAPP DINÁMICO ---
         if wa:
-            link = f"https://wa.me/{format_phone(APP_CONFIG['BOSS_PHONE'])}?text={urllib.parse.quote(wa)}"
-            st.markdown(f'<a href="{link}" target="_blank" class="btn-whatsapp" style="text-decoration:none;">📲 NOTIFICAR AL JEFE</a>', unsafe_allow_html=True)
+            # Vamos a buscar el número del dueño a la base de datos
+            fleet_doc = REFS["fleets"].document(user['fleet']).get()
+            boss_phone = fleet_doc.to_dict().get("boss_phone", "") if fleet_doc.exists else ""
+            
+            if boss_phone:
+                # Si el dueño configuró su número, armamos el link
+                link = f"https://wa.me/{format_phone(boss_phone)}?text={urllib.parse.quote(wa)}"
+                st.markdown(f'<a href="{link}" target="_blank" class="btn-whatsapp" style="text-decoration:none;">📲 NOTIFICAR AL JEFE</a>', unsafe_allow_html=True)
+            else:
+                # Si no lo ha configurado, le avisamos al conductor
+                st.warning("⚠️ Botón de WhatsApp desactivado: El administrador aún no ha configurado su número de teléfono en la sección 'Gestión'.")
+        # ----------------------------------------
         
         st.write("### 📜 Mi Historial")
         st.dataframe(bus_df[['date', 'category', 'observations', 'km_current']].sort_values('date', ascending=False).head(10).assign(date=lambda x: x['date'].dt.strftime('%Y-%m-%d')), use_container_width=True, hide_index=True)
@@ -679,71 +690,105 @@ def render_personnel(user):
 
 def render_fleet_management(df, user):
     st.header("🚛 Gestión de Flota")
-    buses = sorted(df['bus'].unique())
+    
+    # --- 1. NUEVA CONFIGURACIÓN: WHATSAPP DEL DUEÑO ---
+    with st.expander("📱 Configuración de Alertas (WhatsApp del Dueño)", expanded=True):
+        st.info("Ingresa el número donde recibirás las alertas de mantenimientos vencidos de tus conductores.")
+        
+        # Recuperar el número actual de la base de datos
+        fleet_doc = REFS["fleets"].document(user['fleet']).get()
+        current_phone = fleet_doc.to_dict().get("boss_phone", "") if fleet_doc.exists else ""
+        
+        col_w1, col_w2 = st.columns([3, 1])
+        new_phone = col_w1.text_input("Tu número de WhatsApp (Ej: 0991234567)", value=current_phone)
+        
+        if col_w2.button("💾 Guardar Número", use_container_width=True):
+            if new_phone:
+                REFS["fleets"].document(user['fleet']).update({"boss_phone": new_phone})
+                st.success("✅ Número actualizado. Las alertas llegarán aquí.")
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.error("Por favor ingresa un número válido.")
+    
+    st.divider()
+
+    # --- 2. GESTIÓN DE UNIDADES (CON PROTECCIÓN DE FLOTA VACÍA) ---
+    buses = sorted(df['bus'].unique()) if 'bus' in df.columns and not df.empty else []
     c1, c2 = st.columns(2)
     
     with c1.container(border=True):
         st.subheader("✏️ Renombrar Unidad")
-        old = st.selectbox("Unidad", buses, key="ren_old")
-        new = st.text_input("Nuevo Nombre/Número")
-        if st.button("Actualizar Nombre") and new:
-            for d in REFS["data"].collection("logs").where("fleetId","==",user['fleet']).where("bus","==",old).stream():
-                REFS["data"].collection("logs").document(d.id).update({"bus": new})
-            st.cache_data.clear()
-            st.success("Nombre actualizado"); st.rerun()
+        if buses:
+            old = st.selectbox("Unidad", buses, key="ren_old")
+            new = st.text_input("Nuevo Nombre/Número")
+            if st.button("Actualizar Nombre") and new:
+                for d in REFS["data"].collection("logs").where("fleetId","==",user['fleet']).where("bus","==",old).stream():
+                    REFS["data"].collection("logs").document(d.id).update({"bus": new})
+                st.cache_data.clear()
+                st.success("Nombre actualizado"); st.rerun()
+        else:
+            st.warning("No tienes unidades registradas aún.")
 
     with c2.container(border=True):
         st.subheader("🗑️ Borrar Historial")
-        dbus = st.selectbox("Eliminar unidad", buses, key="del_bus")
-        if st.button("ELIMINAR TODO EL HISTORIAL", type="secondary"):
-            docs = REFS["data"].collection("logs").where("fleetId","==",user['fleet']).where("bus","==",dbus).stream()
-            for d in docs:
-                REFS["data"].collection("logs").document(d.id).delete()
-            
-            st.cache_data.clear() 
-            st.success(f"✅ Historial de la unidad {dbus} borrado por completo")
-            time.sleep(1) 
-            st.rerun()
+        if buses:
+            dbus = st.selectbox("Eliminar unidad", buses, key="del_bus")
+            if st.button("ELIMINAR TODO EL HISTORIAL", type="secondary"):
+                docs = REFS["data"].collection("logs").where("fleetId","==",user['fleet']).where("bus","==",dbus).stream()
+                for d in docs:
+                    REFS["data"].collection("logs").document(d.id).delete()
+                
+                st.cache_data.clear() 
+                st.success(f"✅ Historial de la unidad {dbus} borrado por completo")
+                time.sleep(1) 
+                st.rerun()
+        else:
+            st.warning("No hay historiales para eliminar.")
 
     st.divider()
 
+    # --- 3. TRANSFERENCIA DIRECTA ---
     st.subheader("🚀 Transferencia Directa a otro Dueño Itero")
     st.info("Esta función copia todo el historial de un bus a otra empresa Itero usando su Código de Flota.")
     
-    col_t1, col_t2 = st.columns(2)
-    target_fleet = col_t1.text_input("Código de Flota Destino").upper().strip()
-    bus_to_send = col_t2.selectbox("Bus a transferir", buses, key="send_bus")
-    
-    if st.button("Realizar Transferencia Directa", type="primary"):
-        if not target_fleet:
-            st.error("Debes ingresar el código de la flota destino.")
-        elif target_fleet == user['fleet']:
-            st.error("No puedes transferir datos a tu propia flota.")
-        else:
-            dest_doc = REFS["fleets"].document(target_fleet).get()
-            if dest_doc.exists:
-                logs_to_transfer = REFS["data"].collection("logs")\
-                    .where("fleetId", "==", user['fleet'])\
-                    .where("bus", "==", bus_to_send).stream()
-                
-                count = 0
-                for doc in logs_to_transfer:
-                    data = doc.to_dict()
-                    data['fleetId'] = target_fleet
-                    data['observations'] = f"{data.get('observations', '')} (Importado de {user['fleet']})"
-                    
-                    REFS["data"].collection("logs").add(data)
-                    count += 1
-                
-                if count > 0:
-                    st.success(f"✅ ¡Transferencia Exitosa! Se enviaron {count} registros al código {target_fleet}.")
-                    st.balloons()
-                    msg_wa = f"Hola, te he transferido el historial de mi Bus {bus_to_send} a tu sistema Itero AI. ¡Ya puedes revisarlo!"
-                    st.markdown(f"[📲 Notificar al nuevo dueño por WhatsApp](https://wa.me/?text={urllib.parse.quote(msg_wa)})")
-                else:
-                    st.warning("No se encontraron registros para este bus.")
+    if buses:
+        col_t1, col_t2 = st.columns(2)
+        target_fleet = col_t1.text_input("Código de Flota Destino").upper().strip()
+        bus_to_send = col_t2.selectbox("Bus a transferir", buses, key="send_bus")
+        
+        if st.button("Realizar Transferencia Directa", type="primary"):
+            if not target_fleet:
+                st.error("Debes ingresar el código de la flota destino.")
+            elif target_fleet == user['fleet']:
+                st.error("No puedes transferir datos a tu propia flota.")
             else:
-                st.error(f"❌ La flota '{target_fleet}' no existe. Verifica el código con el nuevo dueño.")
+                dest_doc = REFS["fleets"].document(target_fleet).get()
+                if dest_doc.exists:
+                    logs_to_transfer = REFS["data"].collection("logs")\
+                        .where("fleetId", "==", user['fleet'])\
+                        .where("bus", "==", bus_to_send).stream()
+                    
+                    count = 0
+                    for doc in logs_to_transfer:
+                        data = doc.to_dict()
+                        data['fleetId'] = target_fleet
+                        data['observations'] = f"{data.get('observations', '')} (Importado de {user['fleet']})"
+                        
+                        REFS["data"].collection("logs").add(data)
+                        count += 1
+                    
+                    if count > 0:
+                        st.success(f"✅ ¡Transferencia Exitosa! Se enviaron {count} registros al código {target_fleet}.")
+                        st.balloons()
+                        msg_wa = f"Hola, te he transferido el historial de mi Bus {bus_to_send} a tu sistema Itero AI. ¡Ya puedes revisarlo!"
+                        st.markdown(f"[📲 Notificar al nuevo dueño por WhatsApp](https://wa.me/?text={urllib.parse.quote(msg_wa)})")
+                    else:
+                        st.warning("No se encontraron registros para este bus.")
+                else:
+                    st.error(f"❌ La flota '{target_fleet}' no existe. Verifica el código con el nuevo dueño.")
+    else:
+        st.warning("Necesitas tener unidades con historial antes de poder transferirlas.")
 
 def render_directory(providers, user):
     st.header("🏢 Directorio de Proveedores")
