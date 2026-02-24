@@ -10,92 +10,12 @@ import time
 import urllib.parse
 import base64
 
-def render_workshop(user, providers):
-    st.header("🛠️ Registro de Taller")
-    
-    # --- HORA AUTOMÁTICA DEL SISTEMA ---
-    # Captura la hora exacta del momento y lugar donde se registra
-    fecha_registro = datetime.now().isoformat()
-    
-    mecs = [p['name'] for p in providers if p['type'] == "Mecánico"]
-    coms = [p['name'] for p in providers if p['type'] == "Comercio"]
-    
-    # --- 📸 CÁMARA FUERA DEL FORMULARIO (OPCIONAL) ---
-    st.write("📸 **Foto del trabajo o factura (Opcional)**")
-    # Al estar fuera del form, se procesa en tiempo real y no bloquea el guardado
-    foto_archivo = st.camera_input("Capturar evidencia", key="workshop_camera_v5")
-    
-    if not foto_archivo:
-        st.info("💡 Nota: Puedes subir la foto o continuar solo con los datos si el celular tiene problemas.")
-
-    # --- 📝 FORMULARIO DE DATOS ---
-    with st.form("workshop_form_data"):
-        tp = st.radio("Tipo", ["Preventivo", "Correctivo"], horizontal=True)
-        
-        c1, c2 = st.columns(2)
-        cat = c1.selectbox("Categoría", ["Aceite Motor", "Caja", "Corona", "Frenos", "Llantas", "Suspensión", "Eléctrico", "Otro"])
-        obs = st.text_area("Detalle")
-        
-        ka = c1.number_input("KM Actual", min_value=0)
-        kn = c2.number_input("Próximo", min_value=ka) if tp == "Preventivo" else 0
-        
-        st.divider()
-        col_m, col_r = st.columns(2)
-        
-        # Mecánico
-        mn = col_m.selectbox("Mecánico", ["N/A"] + mecs)
-        mc = col_m.number_input("Mano Obra $", min_value=0.0)
-        mp = col_m.number_input("Abono MO $", min_value=0.0) 
-        
-        # Repuestos
-        rn = col_r.selectbox("Comercio", ["N/A"] + coms)
-        rc = col_r.number_input("Repuestos $", min_value=0.0)
-        rp = col_r.number_input("Abono Rep $", min_value=0.0)
-        
-        # Botón de envío
-        enviar = st.form_submit_button("💾 GUARDAR REGISTRO", type="primary", use_container_width=True)
-        
-        if enviar:
-            # VALIDACIÓN: Solo el kilometraje sigue siendo estrictamente obligatorio
-            if ka <= 0:
-                st.error("❌ ERROR: El kilometraje debe ser mayor a 0.")
-            else:
-                # --- PROCESAR FOTO SOLO SI EXISTE ---
-                base64_photo = ""
-                if foto_archivo:
-                    import base64
-                    bytes_data = foto_archivo.getvalue()
-                    base64_photo = base64.b64encode(bytes_data).decode()
-                
-                # --- GUARDAR EN FIREBASE ---
-                REFS["data"].collection("logs").add({
-                    "fleetId": user['fleet'],
-                    "bus": user['bus'],
-                    "date": fecha_registro, # <--- Hora automática
-                    "category": cat,
-                    "observations": obs,
-                    "km_current": ka,
-                    "km_next": kn,
-                    "mec_name": mn,
-                    "mec_cost": mc,
-                    "mec_paid": mp,
-                    "com_name": rn,
-                    "com_cost": rc,
-                    "com_paid": rp,
-                    "photo_b64": base64_photo # Si no hay foto, se guarda vacío
-                })
-                
-                st.cache_data.clear()
-                st.success("✅ ¡Registro guardado con éxito!")
-                time.sleep(1)
-                st.rerun()
-
 # --- 1. CONFIGURACIÓN Y ESTILOS ---
 APP_CONFIG = {
     "APP_ID": "itero-titanium-v15",
     "MASTER_KEY": "ADMIN123",
-    "VERSION": "10.5.0 Itero Master AI", # Versión con IA Corregida
-    "LOGO_URL": "Gemini_Generated_Image_buyjdmbuyjdmbuyj.png", # Tu logo
+    "VERSION": "10.5.0 Itero Master AI", 
+    "LOGO_URL": "Gemini_Generated_Image_buyjdmbuyjdmbuyj.png", 
     "BOSS_PHONE": "0999999999" # <--- CAMBIA ESTO POR TU NÚMERO REAL
 }
 
@@ -107,96 +27,54 @@ UI_COLORS = {
     "bg_metric": "#f8f9fa"
 }
 
-# Corregido de Itaro a Itero
 st.set_page_config(page_title="Itero", layout="wide", page_icon="🚛")
 
-# Estilos CSS Profesionales (Tu código original)
 st.markdown(f"""
     <style>
-    /* Título Principal */
     .main-title {{ font-size: 65px; font-weight: 900; background: linear-gradient(45deg, #1E1E1E, #4A4A4A); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; margin-bottom: 20px; }}
-    
-    /* Botones Modernos de Streamlit (Generales) */
-    .stButton>button {{
-        width: 100%;
-        border-radius: 12px;
-        border: none;
-        padding: 12px 20px;
-        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-        color: #1E1E1E;
-        font-weight: 700;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        transition: all 0.3s ease;
-    }}
-    .stButton>button:hover {{
-        transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(0,0,0,0.15);
-        background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e0 100%);
-        border: none;
-    }}
-
-    /* Botón Primario (Ingresar / Guardar) */
-    div.stButton > button:first-child[kind="primary"] {{
-        background: linear-gradient(135deg, #1e1e1e 0%, #434343 100%);
-        color: white;
-    }}
-
-    /* Botón de WhatsApp Custom */
-    .btn-whatsapp {{
-        display: inline-block;
-        background: linear-gradient(135deg, #25D366 0%, #128C7E 100%);
-        color: white !important;
-        text-decoration: none;
-        padding: 15px 25px;
-        border-radius: 12px;
-        font-weight: 800;
-        text-align: center;
-        width: 100%;
-        box-shadow: 0 4px 15px rgba(37, 211, 102, 0.3);
-        transition: all 0.3s ease;
-        border: none;
-    }}
-    .btn-whatsapp:hover {{
-        transform: scale(1.02);
-        box-shadow: 0 6px 20px rgba(37, 211, 102, 0.4);
-    }}
-
-    /* Tarjetas de Datos */
-    .metric-box {{
-        background: white;
-        padding: 20px;
-        border-radius: 15px;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.05);
-        border: 1px solid #f0f0f0;
-    }}
+    .stButton>button {{ width: 100%; border-radius: 12px; border: none; padding: 12px 20px; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); color: #1E1E1E; font-weight: 700; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: all 0.3s ease; }}
+    .stButton>button:hover {{ transform: translateY(-2px); box-shadow: 0 6px 12px rgba(0,0,0,0.15); background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e0 100%); }}
+    div.stButton > button:first-child[kind="primary"] {{ background: linear-gradient(135deg, #1e1e1e 0%, #434343 100%); color: white; }}
+    .btn-whatsapp {{ display: inline-block; background: linear-gradient(135deg, #25D366 0%, #128C7E 100%); color: white !important; text-decoration: none; padding: 15px 25px; border-radius: 12px; font-weight: 800; text-align: center; width: 100%; box-shadow: 0 4px 15px rgba(37, 211, 102, 0.3); transition: all 0.3s ease; border: none; }}
+    .btn-whatsapp:hover {{ transform: scale(1.02); box-shadow: 0 6px 20px rgba(37, 211, 102, 0.4); }}
+    .metric-box {{ background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); border: 1px solid #f0f0f0; }}
     </style>
     """, unsafe_allow_html=True)
 
 # --- UTILERÍAS ---
 def format_phone(phone):
-    """Convierte cualquier número al formato de WhatsApp (+593 automático)"""
     if not phone: return ""
     p = str(phone).replace(" ", "").replace("+", "").replace("-", "")
     if p.startswith("0"): return "593" + p[1:]  
     if not p.startswith("593"): return "593" + p 
     return p
 
-# --- 2. CONFIGURACIÓN DE IA (SOLUCIÓN AL ERROR 404) ---
+# --- 2. CONFIGURACIÓN DE IA (OPTIMIZADA) ---
 try:
     if "GEMINI_KEY" in st.secrets:
         genai.configure(api_key=st.secrets["GEMINI_KEY"]["api_key"])
         HAS_AI = True
     else:
         HAS_AI = False
-except Exception as e:
+except Exception:
     HAS_AI = False
 
+@st.cache_resource
+def get_ai_model():
+    if not HAS_AI: return None
+    try:
+        valid_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        model_name = next((m for m in valid_models if "1.5-flash" in m), valid_models[0] if valid_models else "models/gemini-1.5-flash")
+        return genai.GenerativeModel(model_name)
+    except Exception:
+        return None
+
 def get_ai_analysis(df_bus, bus_id, fleet_id):
-    """IA Holística: Corregida para evitar errores de modelo no encontrado."""
     if not HAS_AI: return "⚠️ IA no disponible."
+    model = get_ai_model()
+    if not model: return "Error de conexión IA."
     
     try:
-        # Recuperar reglas de entrenamiento
         fleet_doc = REFS["fleets"].document(fleet_id).get()
         ai_rules = fleet_doc.to_dict().get("ai_rules", "") if fleet_doc.exists else ""
 
@@ -213,24 +91,10 @@ def get_ai_analysis(df_bus, bus_id, fleet_id):
 
         Dame 3 puntos breves (Diagnóstico, Alerta de Costos/Fraudes, Recomendación). Usa emojis.
         """
-        
-        # --- SOLUCIÓN AL 404: Listar modelos disponibles dinámicamente ---
-        valid_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        
-        # Priorizar flash, luego pro, luego el primero disponible
-        model_to_use = "models/gemini-1.5-flash" # Default
-        if valid_models:
-            model_to_use = valid_models[0]
-            for m in valid_models:
-                if "1.5-flash" in m:
-                    model_to_use = m
-                    break
-
-        model = genai.GenerativeModel(model_to_use)
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
-        return f"Error de conexión IA: {str(e)}"
+        return f"Error en análisis IA: {str(e)}"
 
 # --- 3. CAPA DE DATOS (FIREBASE INTEGRADO) ---
 @st.cache_resource
@@ -288,7 +152,7 @@ def fetch_fleet_data(fleet_id: str, role: str, bus_id: str, start_d: date, end_d
     except Exception as e:
         st.error(f"Error: {e}"); return [], pd.DataFrame()
 
-# --- 4. UI LOGIN Y SUPER ADMIN (Tu código completo) ---
+# --- 4. UI LOGIN Y SUPER ADMIN ---
 def ui_render_login():
     st.markdown('<div class="main-title">Itero AI</div>', unsafe_allow_html=True)
     t1, t2, t3 = st.tabs(["👤 Ingresar", "📝 Crear Flota", "⚙️ Super Admin"])
@@ -326,11 +190,8 @@ def handle_login(f_in, u_in, r_in, pass_in):
         
     data = doc.to_dict()
     
-    # --- BLOQUE DE SUSPENSIÓN CORDIAL ---
     if data.get('status') == 'suspended':
-        # Buscamos el contacto que guardaste en el Super Admin
         sup_snap = REFS["data"].get()
-        # Si no has guardado nada aún, usa tus datos por defecto
         contacto_maestro = "jlmaldonado173@gmail.com o 0964014007"
         contacto = sup_snap.to_dict().get("support_contact", contacto_maestro) if sup_snap.exists else contacto_maestro
         
@@ -344,7 +205,6 @@ def handle_login(f_in, u_in, r_in, pass_in):
             Estaremos encantados de ayudarle a continuar con su operación.
         """)
         return
-    # ------------------------------------
 
     access = False; role = ""; assigned_bus = "0"
     if "Adm" in r_in:
@@ -353,7 +213,6 @@ def handle_login(f_in, u_in, r_in, pass_in):
         else: 
             st.error("🔒 Contraseña incorrecta.")
     else:
-        # Login ciego para conductor
         auth = REFS["fleets"].document(f_in).collection("authorized_users").document(u_in).get()
         if auth.exists and auth.to_dict().get('active', True): 
             access = True; role = 'driver'
@@ -364,8 +223,6 @@ def handle_login(f_in, u_in, r_in, pass_in):
     if access:
         st.session_state.user = {'role': role, 'fleet': f_in, 'name': u_in, 'bus': assigned_bus}
         st.rerun()
-
-    # ... resto del código de login ...
 
 def handle_register(nid, own, pas):
     if REFS and nid and own and pas:
@@ -380,29 +237,20 @@ def render_super_admin():
     if not REFS: return
     st.header("⚙️ Panel de Control Maestro (Super Admin)")
     
-    # 1. Configuración de contacto (CORRECCIÓN DEL ERROR NOTFOUND)
     with st.expander("🛠️ Configuración de Mensaje de Bloqueo", expanded=True):
-        # Datos predeterminados solicitados
         msg_default = "jlmaldonado173@gmail.com o llame al 0964014007"
-        
-        # Intentamos traer el valor actual si existe
         doc_snap = REFS["data"].get()
         current_msg = doc_snap.to_dict().get("support_contact", msg_default) if doc_snap.exists else msg_default
-        
         c_msg = st.text_input("Contacto de soporte para flotas suspendidas", value=current_msg)
         
         if st.button("Guardar Contacto Maestro"):
-            # USAMOS .set con merge=True para que si no existe el documento, lo cree sin error
             REFS["data"].set({"support_contact": c_msg}, merge=True)
             st.success("✅ ¡Contacto guardado! Este mensaje aparecerá a las flotas bloqueadas.")
 
     st.subheader("🏢 Gestión de Empresas Registradas")
     
-    # 2. Listado de flotas
     for f in REFS["fleets"].stream():
         d = f.to_dict()
-        
-        # Conteo de unidades real de esta flota
         unidades = REFS["data"].collection("logs").where("fleetId", "==", f.id).stream()
         bus_list = set([u.to_dict().get('bus') for u in unidades if u.to_dict().get('bus')])
         total_buses = len(bus_list)
@@ -410,14 +258,12 @@ def render_super_admin():
         with st.expander(f"Empresa: {f.id} | Dueño: {d.get('owner')} | 🚛 {total_buses} Unidades", expanded=False):
             c1, c2, c3 = st.columns(3)
             
-            # Control de Estado (Suspender/Activar)
             is_active = d.get('status') == 'active'
             label = "🔴 SUSPENDER" if is_active else "🟢 ACTIVAR"
             if c1.button(label, key=f"s_{f.id}"):
                 REFS["fleets"].document(f.id).update({"status": "suspended" if is_active else "active"})
                 st.rerun()
             
-            # Cambio de Clave
             new_pass = c2.text_input("Nueva Clave", key=f"p_{f.id}", type="password")
             if c2.button("Cambiar Password", key=f"bp_{f.id}"):
                 if new_pass:
@@ -426,17 +272,16 @@ def render_super_admin():
                 else: 
                     st.error("Escribe una clave")
 
-            # Peligro: Eliminar
             if c3.button("🗑️ ELIMINAR FLOTA", key=f"del_{f.id}"):
                 REFS["fleets"].document(f.id).delete()
                 st.rerun()
+
 # --- 5. VISTAS PRINCIPALES ---
 def render_radar(df, user):
     st.subheader("📡 Radar de Flota")
     if df.empty or 'bus' not in df.columns: 
         st.info("⏳ Sin datos actuales."); return
 
-    # Definir qué buses ve cada quien
     buses = sorted(df['bus'].unique()) if user['role'] == 'owner' else [user['bus']]
     
     if user['role'] == 'driver':
@@ -445,7 +290,6 @@ def render_radar(df, user):
         if bus_df.empty: st.warning("Sin historial."); return
         latest = bus_df.iloc[0]; pending = bus_df[bus_df['km_next'] > 0]
         
-        # Lógica de colores y estados
         color = "#28a745"; msg = "✅ UNIDAD OPERATIVA"; wa = ""
         if not pending.empty:
             diff = pending.iloc[0]['km_next'] - latest['km_current']
@@ -460,7 +304,6 @@ def render_radar(df, user):
             else:
                 color = "linear-gradient(135deg, #28a745 0%, #1e7e34 100%)"
 
-        # Tarjeta de Conductor Moderna
         st.markdown(f"""
             <div class="driver-card" style="background:{color}; border:none; padding:30px; border-radius:15px; color:white;">
                 <h1 style="margin:0; font-size:45px; letter-spacing:-1px;">BUS {bus}</h1>
@@ -471,7 +314,6 @@ def render_radar(df, user):
             </div>
         """, unsafe_allow_html=True)
 
-        # SECCIÓN DE IA PARA CONDUCTOR
         st.write("")
         if st.button(f"🤖 Consultar Diagnóstico IA (Bus {bus})", key=f"ai_drv_{bus}", type="primary", use_container_width=True):
             with st.spinner("IA Analizando tu unidad..."):
@@ -485,7 +327,6 @@ def render_radar(df, user):
         st.dataframe(bus_df[['date', 'category', 'observations', 'km_current']].head(10).assign(date=lambda x: x['date'].dt.strftime('%Y-%m-%d')), use_container_width=True, hide_index=True)
         return
 
-    # VISTA DUEÑO / OTROS ROLES (Mecánico u Owner)
     for bus in buses:
         bus_df = df[df['bus'] == bus].sort_values('date', ascending=False)
         if bus_df.empty: continue
@@ -505,7 +346,6 @@ def render_radar(df, user):
                 st.markdown('</div>', unsafe_allow_html=True)
             
             with c2:
-                # Botón de IA disponible en el expander
                 if st.button(f"🤖 Diagnóstico IA", key=f"ai_own_{bus}", type="primary", use_container_width=True):
                     with st.spinner("IA Analizando..."):
                         st.info(get_ai_analysis(bus_df, bus, user['fleet']))
@@ -542,11 +382,9 @@ def render_reports(df):
 
     with t3:
         st.subheader("📜 Bitácora de Movimientos")
-        # Ordenamos por fecha descendente
         df_sorted = df.sort_values('date', ascending=False)
         
         for _, r in df_sorted.iterrows():
-            # Título del expander con fecha y bus
             fecha_str = r['date'].strftime('%d/%m/%Y')
             with st.expander(f"📅 {fecha_str} | Bus {r['bus']} | {r['category']}"):
                 col_txt, col_img = st.columns([2, 1])
@@ -560,7 +398,6 @@ def render_reports(df):
                         st.caption(f"🛒 Comercio: {r['com_name']} (${r['com_cost']})")
                 
                 with col_img:
-                    # --- AQUÍ SE MUESTRA LA FOTO CAPTURADA ---
                     if "photo_b64" in r and r["photo_b64"]:
                         try:
                             st.image(f"data:image/jpeg;base64,{r['photo_b64']}", 
@@ -574,7 +411,6 @@ def render_reports(df):
 def render_accounting(df, user, phone_map):
     st.header("💰 Contabilidad y Abonos")
     
-    # Filtrar registros con deudas pendientes
     pend = df[(df['mec_cost'] > df['mec_paid']) | (df['com_cost'] > df['com_paid'])]
     
     if pend.empty:
@@ -582,12 +418,10 @@ def render_accounting(df, user, phone_map):
         return
     
     for bus in sorted(pend['bus'].unique()):
-        # Expander moderno para cada Bus
         with st.expander(f"🚌 DEUDAS BUS {bus}", expanded=True):
             bus_pend = pend[pend['bus'] == bus].sort_values('date', ascending=False)
             
             for _, r in bus_pend.iterrows():
-                # Contenedor de tarjeta para cada trabajo
                 st.markdown(f"""
                 <div class="metric-box" style="margin-bottom:15px;">
                     <p style="margin:0; color:#666; font-size:12px;">{r['date'].strftime('%d-%m-%Y')}</p>
@@ -597,7 +431,6 @@ def render_accounting(df, user, phone_map):
                 
                 c1, c2 = st.columns(2)
                 
-                # Configuración de los dos tipos de deudas posibles por registro
                 deudas = [
                     ('m', 'mec_cost', 'mec_paid', 'mec_name', '👨‍🔧 Mano de Obra'),
                     ('c', 'com_cost', 'com_paid', 'com_name', '🛒 Repuestos/Comercio')
@@ -609,11 +442,9 @@ def render_accounting(df, user, phone_map):
                     
                     if debt > 0:
                         with col:
-                            # Visualización de la deuda
                             st.metric(lbl, f"${debt:,.2f}", help=f"Proveedor: {r.get(name,'No asignado')}")
                             
                             if user['role'] == 'owner':
-                                # Input de abono con estilo
                                 v = st.number_input(
                                     f"Abonar a {r.get(name,'')}", 
                                     key=f"in_{t}{r['id']}", 
@@ -623,12 +454,10 @@ def render_accounting(df, user, phone_map):
                                 )
                                 
                                 if st.button(f"Registrar Pago", key=f"btn_{t}{r['id']}", type="primary", use_container_width=True):
-                                    # 1. Actualización en Firebase
                                     REFS["data"].collection("logs").document(r['id']).update({
                                         paid: firestore.Increment(v)
                                     })
                                     
-                                    # 2. Preparación del mensaje de WhatsApp
                                     nuevo_saldo = debt - v
                                     ph = format_phone(phone_map.get(r.get(name), ''))
                                     
@@ -646,7 +475,6 @@ def render_accounting(df, user, phone_map):
                                         
                                         link = f"https://wa.me/{ph}?text={urllib.parse.quote(texto)}"
                                         
-                                        # 3. Mostrar botón moderno de WhatsApp
                                         st.markdown(f"""
                                             <a href="{link}" target="_blank" class="btn-whatsapp" style="text-decoration:none;">
                                                 📲 ENVIAR COMPROBANTE WHATSAPP
@@ -655,7 +483,7 @@ def render_accounting(df, user, phone_map):
                                         """, unsafe_allow_html=True)
                                     
                                     st.success(f"Abono de ${v} registrado.")
-                                    fetch_fleet_data.clear()
+                                    st.cache_data.clear()
                                     time.sleep(2)
                                     st.rerun()
                 st.markdown("---")
@@ -663,22 +491,14 @@ def render_accounting(df, user, phone_map):
 def render_workshop(user, providers):
     st.header("🛠️ Registro de Taller")
     
-    # --- HORA AUTOMÁTICA DEL SISTEMA ---
-    # Captura la hora exacta del momento y lugar donde se registra
     fecha_registro = datetime.now().isoformat()
-    
     mecs = [p['name'] for p in providers if p['type'] == "Mecánico"]
     coms = [p['name'] for p in providers if p['type'] == "Comercio"]
     
-    # --- 📸 CÁMARA FUERA DEL FORMULARIO (OPCIONAL) ---
     st.write("📸 **Foto del trabajo o factura (Opcional)**")
-    # Al estar fuera del form, se procesa en tiempo real y no bloquea el guardado
-    foto_archivo = st.camera_input("Capturar evidencia", key="workshop_camera_v5")
+    # Llave dinámica para evitar conflictos de estado entre distintas unidades
+    foto_archivo = st.camera_input("Capturar evidencia", key=f"cam_{user.get('bus', 'default')}")
     
-    if not foto_archivo:
-        st.info("💡 Nota: Puedes subir la foto o continuar solo con los datos si el celular tiene problemas.")
-
-    # --- 📝 FORMULARIO DE DATOS ---
     with st.form("workshop_form_data"):
         tp = st.radio("Tipo", ["Preventivo", "Correctivo"], horizontal=True)
         
@@ -692,36 +512,28 @@ def render_workshop(user, providers):
         st.divider()
         col_m, col_r = st.columns(2)
         
-        # Mecánico
         mn = col_m.selectbox("Mecánico", ["N/A"] + mecs)
         mc = col_m.number_input("Mano Obra $", min_value=0.0)
         mp = col_m.number_input("Abono MO $", min_value=0.0) 
         
-        # Repuestos
         rn = col_r.selectbox("Comercio", ["N/A"] + coms)
         rc = col_r.number_input("Repuestos $", min_value=0.0)
         rp = col_r.number_input("Abono Rep $", min_value=0.0)
         
-        # Botón de envío
         enviar = st.form_submit_button("💾 GUARDAR REGISTRO", type="primary", use_container_width=True)
         
         if enviar:
-            # VALIDACIÓN: Solo el kilometraje sigue siendo estrictamente obligatorio
             if ka <= 0:
                 st.error("❌ ERROR: El kilometraje debe ser mayor a 0.")
             else:
-                # --- PROCESAR FOTO SOLO SI EXISTE ---
                 base64_photo = ""
                 if foto_archivo:
-                    import base64
-                    bytes_data = foto_archivo.getvalue()
-                    base64_photo = base64.b64encode(bytes_data).decode()
+                    base64_photo = base64.b64encode(foto_archivo.getvalue()).decode()
                 
-                # --- GUARDAR EN FIREBASE ---
                 REFS["data"].collection("logs").add({
                     "fleetId": user['fleet'],
                     "bus": user['bus'],
-                    "date": fecha_registro, # <--- Hora automática
+                    "date": fecha_registro,
                     "category": cat,
                     "observations": obs,
                     "km_current": ka,
@@ -732,7 +544,7 @@ def render_workshop(user, providers):
                     "com_name": rn,
                     "com_cost": rc,
                     "com_paid": rp,
-                    "photo_b64": base64_photo # Si no hay foto, se guarda vacío
+                    "photo_b64": base64_photo
                 })
                 
                 st.cache_data.clear()
@@ -744,7 +556,6 @@ def render_fuel():
     u = st.session_state.user
     st.header("⛽ Registro de Combustible")
     
-    # 1. Hora Automática (Usa la zona horaria de donde esté el usuario)
     fecha_actual = datetime.now().isoformat()
     
     with st.form("fuel_form", clear_on_submit=True):
@@ -755,19 +566,17 @@ def render_fuel():
         
         if st.form_submit_button("🚀 REGISTRAR CARGA", type="primary", use_container_width=True):
             if k > 0 and g > 0 and c > 0:
-                # 2. Guardado en Firebase con la hora automática detectada
                 REFS["data"].collection("logs").add({
                     "fleetId": u['fleet'],
                     "bus": u['bus'],
-                    "date": fecha_actual, # <--- HORA AUTOMÁTICA
+                    "date": fecha_actual,
                     "category": "Combustible",
                     "km_current": k,
                     "gallons": g,
                     "com_cost": c,
-                    "com_paid": c # Se marca como pagado automáticamente
+                    "com_paid": c 
                 })
                 
-                # 3. Limpieza de caché para actualizar gráficos y tablas
                 st.cache_data.clear() 
                 st.success("✅ Carga registrada correctamente")
                 time.sleep(1)
@@ -778,15 +587,11 @@ def render_fuel():
 def render_personnel(user):
     st.header("👥 Gestión de Personal")
     
-    # 1. Formulario para Nuevo Usuario (Conductor o Mecánico)
     with st.expander("➕ Registrar Nuevo Personal"):
         with st.form("nd"):
             nm = st.text_input("Nombre / Usuario").upper()
             te = st.text_input("Teléfono")
-            
-            # Selector de ROL: Esto es lo que permite que el sistema sepa quién es mecánico
             rol = st.selectbox("Rol", ["driver", "mechanic"], format_func=lambda x: "🚛 Conductor" if x == "driver" else "🛠️ Mecánico")
-            
             bs = st.text_input("Bus Asignado (Poner 0 para Mecánicos)")
             
             if st.form_submit_button("Crear Usuario", type="primary"):
@@ -795,7 +600,7 @@ def render_personnel(user):
                         "active": True,
                         "phone": te,
                         "bus": bs,
-                        "role": rol # Guardamos el rol elegido
+                        "role": rol 
                     })
                     st.cache_data.clear()
                     st.success(f"Usuario {nm} creado como {rol}")
@@ -806,25 +611,20 @@ def render_personnel(user):
     st.divider()
     st.subheader("📋 Lista de Personal Autorizado")
 
-    # 2. Lista de usuarios existentes
     usuarios = REFS["fleets"].document(user['fleet']).collection("authorized_users").stream()
     
     for us in usuarios:
         d = us.to_dict()
-        # No mostramos al admin en la lista para evitar errores
         if d.get('role') != 'owner' and d.get('role') != 'admin':
             with st.container(border=True):
                 c1, c2, c3 = st.columns([3, 2, 1])
                 
-                # Identificamos visualmente el rol
                 emoji = "🛠️" if d.get('role') == 'mechanic' else "🚛"
                 c1.markdown(f"{emoji} **{us.id}**")
                 c1.caption(f"Rol: {d.get('role')} | 📱 {d.get('phone')}")
                 
-                # Edición de unidad asignada
                 nb = c2.text_input("Unidad", value=d.get('bus',''), key=f"b_{us.id}")
                 
-                # Guardar cambios o Borrar
                 if nb != d.get('bus',''):
                     if c2.button("💾", key=f"s_{us.id}"): 
                         REFS["fleets"].document(user['fleet']).collection("authorized_users").document(us.id).update({"bus": nb})
@@ -835,12 +635,12 @@ def render_personnel(user):
                     REFS["fleets"].document(user['fleet']).collection("authorized_users").document(us.id).delete()
                     st.cache_data.clear()
                     st.rerun()
+
 def render_fleet_management(df, user):
     st.header("🚛 Gestión de Flota")
     buses = sorted(df['bus'].unique())
     c1, c2 = st.columns(2)
     
-    # --- BLOQUE 1: RENOMBRAR ---
     with c1.container(border=True):
         st.subheader("✏️ Renombrar Unidad")
         old = st.selectbox("Unidad", buses, key="ren_old")
@@ -848,29 +648,24 @@ def render_fleet_management(df, user):
         if st.button("Actualizar Nombre") and new:
             for d in REFS["data"].collection("logs").where("fleetId","==",user['fleet']).where("bus","==",old).stream():
                 REFS["data"].collection("logs").document(d.id).update({"bus": new})
+            st.cache_data.clear()
             st.success("Nombre actualizado"); st.rerun()
 
-# --- BLOQUE 2: BORRAR (CORREGIDO) ---
     with c2.container(border=True):
         st.subheader("🗑️ Borrar Historial")
         dbus = st.selectbox("Eliminar unidad", buses, key="del_bus")
         if st.button("ELIMINAR TODO EL HISTORIAL", type="secondary"):
-            # 1. Borrar de la base de datos
             docs = REFS["data"].collection("logs").where("fleetId","==",user['fleet']).where("bus","==",dbus).stream()
             for d in docs:
                 REFS["data"].collection("logs").document(d.id).delete()
             
-            # 2. LIMPIAR LA CACHE (Esto es lo que te falta)
             st.cache_data.clear() 
-            
-            # 3. Notificar y refrescar
             st.success(f"✅ Historial de la unidad {dbus} borrado por completo")
-            time.sleep(1) # Un pequeño respiro para el sistema
+            time.sleep(1) 
             st.rerun()
 
     st.divider()
 
-    # --- BLOQUE 3: TRANSFERENCIA DIRECTA (NUEVO) ---
     st.subheader("🚀 Transferencia Directa a otro Dueño Itero")
     st.info("Esta función copia todo el historial de un bus a otra empresa Itero usando su Código de Flota.")
     
@@ -884,10 +679,8 @@ def render_fleet_management(df, user):
         elif target_fleet == user['fleet']:
             st.error("No puedes transferir datos a tu propia flota.")
         else:
-            # 1. Verificar si la flota destino existe en el sistema
             dest_doc = REFS["fleets"].document(target_fleet).get()
             if dest_doc.exists:
-                # 2. Consultar registros del bus actual
                 logs_to_transfer = REFS["data"].collection("logs")\
                     .where("fleetId", "==", user['fleet'])\
                     .where("bus", "==", bus_to_send).stream()
@@ -895,19 +688,15 @@ def render_fleet_management(df, user):
                 count = 0
                 for doc in logs_to_transfer:
                     data = doc.to_dict()
-                    # 3. Cambiamos el dueño al ID de la flota destino
                     data['fleetId'] = target_fleet
                     data['observations'] = f"{data.get('observations', '')} (Importado de {user['fleet']})"
                     
-                    # 4. Guardamos en la base de datos como nuevo registro para el destino
                     REFS["data"].collection("logs").add(data)
                     count += 1
                 
                 if count > 0:
                     st.success(f"✅ ¡Transferencia Exitosa! Se enviaron {count} registros al código {target_fleet}.")
                     st.balloons()
-                    # Opcional: WhatsApp al nuevo dueño si tenemos su número
-                    dest_data = dest_doc.to_dict()
                     msg_wa = f"Hola, te he transferido el historial de mi Bus {bus_to_send} a tu sistema Itero AI. ¡Ya puedes revisarlo!"
                     st.markdown(f"[📲 Notificar al nuevo dueño por WhatsApp](https://wa.me/?text={urllib.parse.quote(msg_wa)})")
                 else:
@@ -918,8 +707,6 @@ def render_fleet_management(df, user):
 def render_directory(providers, user):
     st.header("🏢 Directorio de Proveedores")
     
-    # 1. REGISTRO DE NUEVO (Solo Dueño)
-    # Agregamos clear_on_submit=True para vaciar las cajas al guardar
     if user['role'] == 'owner':
         with st.expander("➕ Registrar Nuevo Maestro / Proveedor", expanded=False):
             with st.form("new_prov_form", clear_on_submit=True):
@@ -943,7 +730,6 @@ def render_directory(providers, user):
         st.info("Aún no tienes proveedores registrados.")
         return
 
-    # 2. LISTA DE PROVEEDORES (Visualización para todos los roles)
     for p in providers:
         p_id = p.get('id')
         with st.container(border=True):
@@ -952,11 +738,9 @@ def render_directory(providers, user):
             col_info.markdown(f"**{p['name']}**")
             col_info.caption(f"🔧 {p['type']} | 📞 {p.get('phone', 'S/N')}")
             
-            # Botón de WhatsApp
             if p.get('phone'):
-                # Función auxiliar para limpiar el número (debes tenerla definida)
                 ph = "".join(filter(str.isdigit, p['phone']))
-                if ph.startswith('0'): ph = '593' + ph[1:] # Ajuste para Ecuador
+                if ph.startswith('0'): ph = '593' + ph[1:] 
                 
                 link = f"https://wa.me/{ph}?text=Hola%20{p['name']}"
                 col_wa.markdown(
@@ -966,15 +750,12 @@ def render_directory(providers, user):
                     unsafe_allow_html=True
                 )
 
-            # 3. GESTIÓN DE PROVEEDOR (Solo Dueño)
             if user['role'] == 'owner':
                 st.divider()
                 c_edit, c_del = st.columns(2)
                 
-                # Checkbox para abrir edición
                 edit_mode = c_edit.checkbox("✏️ Editar", key=f"ed_check_{p_id}")
                 
-                # Borrado directo
                 if c_del.button("🗑️ Eliminar", key=f"del_btn_{p_id}", use_container_width=True):
                     REFS["data"].collection("providers").document(p_id).delete()
                     st.cache_data.clear()
@@ -982,13 +763,11 @@ def render_directory(providers, user):
                     time.sleep(0.5)
                     st.rerun()
 
-                # Formulario de Edición (Aparece solo si el checkbox está activo)
                 if edit_mode:
                     with st.form(f"f_ed_{p_id}"):
                         new_n = st.text_input("Nombre", value=p['name']).upper()
                         new_p = st.text_input("WhatsApp", value=p.get('phone',''))
                         
-                        # Lista de tipos para el index
                         tipos = ["Mecánico", "Comercio", "Llantas", "Frenos", "Electricista", "Otro"]
                         idx = tipos.index(p['type']) if p['type'] in tipos else 0
                         
@@ -1006,7 +785,6 @@ def render_directory(providers, user):
 def render_mechanic_work(user, bus_id, providers):
     st.info(f"Registrando trabajo para la Unidad: **{bus_id}**")
     
-    # Buscamos el nombre del comercio en el directorio para que el mecánico elija dónde compró repuestos
     coms = [p['name'] for p in providers if p['type'] == "Comercio"]
     
     with st.form("mechanic_log"):
@@ -1021,31 +799,28 @@ def render_mechanic_work(user, bus_id, providers):
         store_name = st.selectbox("Comprado en:", ["N/A"] + coms)
         rep_cost = st.number_input("Costo de Repuestos $", min_value=0.0)
         
-        # Foto obligatoria del daño o repuesto
         foto = st.camera_input("Capturar evidencia del trabajo")
         
         if st.form_submit_button("ENVIAR REPORTE Y CARGAR A CONTABILIDAD", type="primary"):
             if not foto or not obs:
                 st.error("Debe incluir descripción y foto de evidencia.")
             else:
-                # Convertir foto
                 bytes_data = foto.getvalue()
                 b64 = base64.b64encode(bytes_data).decode()
                 
-                # GUARDAR EN FIREBASE
                 REFS["data"].collection("logs").add({
                     "fleetId": user['fleet'],
                     "bus": bus_id,
                     "date": datetime.now().isoformat(),
                     "category": cat,
                     "observations": f"REPORTE MECÁNICO ({user['name']}): {obs}",
-                    "km_current": 0, # El mecánico no siempre sabe el KM, se puede dejar en 0
-                    "mec_name": user['name'], # El nombre del mecánico que inició sesión
+                    "km_current": 0, 
+                    "mec_name": user['name'], 
                     "mec_cost": mo_cost,
-                    "mec_paid": 0, # Se guarda como DEUDA automáticamente
+                    "mec_paid": 0, 
                     "com_name": store_name,
                     "com_cost": rep_cost,
-                    "com_paid": 0, # Se guarda como DEUDA
+                    "com_paid": 0, 
                     "photo_b64": b64
                 })
                 
@@ -1053,27 +828,24 @@ def render_mechanic_work(user, bus_id, providers):
                 st.success("✅ Reporte enviado. El dueño ya puede ver los costos en Contabilidad.")
                 time.sleep(1)
                 st.rerun()
+
 def main():
     if 'user' not in st.session_state:
         ui_render_login()
     else:
         u = st.session_state.user
         
-        # Logo y Nombre en el Sidebar
         if "LOGO_URL" in APP_CONFIG: 
             st.sidebar.image(APP_CONFIG["LOGO_URL"], width=200)
         st.sidebar.title(f"Itero: {u['name']}")
         
-        # Filtro de fechas
         dr = st.sidebar.date_input("Fechas", [date.today() - timedelta(days=90), date.today()])
         
-        # Carga de datos base
         provs, df = fetch_fleet_data(u['fleet'], u['role'], u['bus'], dr[0], dr[1])
         phone_map = {p['name']: p.get('phone', '') for p in provs}
 
         # --- LÓGICA POR ROLES ---
         
-        # 1. ROL CONDUCTOR
         if u['role'] == 'driver':
             st.subheader("⛽ Carga de Combustible")
             with st.form("fuel_driver_main"):
@@ -1100,16 +872,12 @@ def main():
             choice = st.sidebar.radio("Más opciones:", list(menu.keys()))
             menu[choice]()
 
-        # 2. ROL MECÁNICO
         elif u['role'] == 'mechanic':
             st.subheader(f"🛠️ Centro de Servicio: {u['name']}")
             
-            # Buscamos unidades disponibles en los logs
             buses_disponibles = sorted(df['bus'].unique()) if not df.empty else ["Sin Unidades"]
             bus_sel = st.sidebar.selectbox("Unidad a Reparar", buses_disponibles)
             
-            # Filtramos los datos estrictamente para el bus seleccionado
-            # Esto es clave para que la IA no analice buses que no corresponden
             df_bus = df[df['bus'] == bus_sel] if not df.empty else df
 
             menu = {
@@ -1119,11 +887,9 @@ def main():
                 "🏢 Directorio": lambda: render_directory(provs, u)
             }
             
-            # Colocamos "Estado del Bus" como primera opción para que vea el diagnóstico IA de entrada
             choice = st.sidebar.radio("Menú Mecánico:", list(menu.keys()))
             menu[choice]()
 
-        # 3. ROL DUEÑO (Un solo bloque else)
         else:
             render_radar(df, u)
             st.divider()
@@ -1140,7 +906,6 @@ def main():
             choice = st.sidebar.radio("Ir a:", list(menu.keys()))
             menu[choice]()
         
-        # Sidebar final
         st.sidebar.divider()
         if st.sidebar.button("Cerrar Sesión", use_container_width=True): 
             st.session_state.clear()
