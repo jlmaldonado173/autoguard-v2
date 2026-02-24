@@ -286,30 +286,43 @@ def render_radar(df, user):
     
     if user['role'] == 'driver':
         bus = user['bus']
-        bus_df = df[df['bus'] == bus].sort_values('date', ascending=False)
+        bus_df = df[df['bus'] == bus]
         if bus_df.empty: st.warning("Sin historial."); return
-        latest = bus_df.iloc[0]; pending = bus_df[bus_df['km_next'] > 0]
+        
+        # 1. KM Real: El valor más alto registrado (ignora los 0 de los mecánicos)
+        current_km = bus_df['km_current'].max()
+        
+        # 2. Última intervención REAL por cada categoría
+        latest_by_cat = bus_df.sort_values('date', ascending=False).drop_duplicates(subset=['category'])
+        
+        # 3. Nos quedamos solo con las que esperan preventivo
+        pending = latest_by_cat[latest_by_cat['km_next'] > 0].copy()
         
         color = "#28a745"; msg = "✅ UNIDAD OPERATIVA"; wa = ""
+        
         if not pending.empty:
-            diff = pending.iloc[0]['km_next'] - latest['km_current']
+            # Calcular cuánto falta para cada categoría
+            pending['diff'] = pending['km_next'] - current_km
+            # Obtener el peor caso (el que esté más vencido o más próximo)
+            worst_case = pending.loc[pending['diff'].idxmin()]
+            diff = worst_case['diff']
+            
             if diff < 0: 
                 color = "linear-gradient(135deg, #FF4B4B 0%, #8B0000 100%)"
-                msg = f"🚨 VENCIDO: {pending.iloc[0]['category']}"
-                wa = f"Jefe, mi unidad {bus} tiene vencido {pending.iloc[0]['category']}."
+                msg = f"🚨 VENCIDO: {worst_case['category']}"
+                wa = f"Jefe, mi unidad {bus} tiene vencido {worst_case['category']}."
             elif diff <= 500: 
                 color = "linear-gradient(135deg, #ffc107 0%, #e67e22 100%)"
-                msg = f"⚠️ PRÓXIMO: {pending.iloc[0]['category']}"
-                wa = f"Jefe, al Bus {bus} le toca {pending.iloc[0]['category']} pronto."
-            else:
-                color = "linear-gradient(135deg, #28a745 0%, #1e7e34 100%)"
+                msg = f"⚠️ PRÓXIMO: {worst_case['category']}"
+                wa = f"Jefe, al Bus {bus} le toca {worst_case['category']} pronto."
 
+        # UI Tarjeta
         st.markdown(f"""
             <div class="driver-card" style="background:{color}; border:none; padding:30px; border-radius:15px; color:white;">
                 <h1 style="margin:0; font-size:45px; letter-spacing:-1px;">BUS {bus}</h1>
                 <h3 style="opacity:0.9; font-weight:400;">{msg}</h3>
                 <div style="background:rgba(255,255,255,0.2); display:inline-block; padding:10px 30px; border-radius:50px; margin-top:15px;">
-                    <span style="font-size:40px; font-weight:900;">{latest['km_current']:,.0f} KM</span>
+                    <span style="font-size:40px; font-weight:900;">{current_km:,.0f} KM</span>
                 </div>
             </div>
         """, unsafe_allow_html=True)
@@ -324,25 +337,30 @@ def render_radar(df, user):
             st.markdown(f'<a href="{link}" target="_blank" class="btn-whatsapp" style="text-decoration:none;">📲 NOTIFICAR AL JEFE</a>', unsafe_allow_html=True)
         
         st.write("### 📜 Mi Historial")
-        st.dataframe(bus_df[['date', 'category', 'observations', 'km_current']].head(10).assign(date=lambda x: x['date'].dt.strftime('%Y-%m-%d')), use_container_width=True, hide_index=True)
+        st.dataframe(bus_df[['date', 'category', 'observations', 'km_current']].sort_values('date', ascending=False).head(10).assign(date=lambda x: x['date'].dt.strftime('%Y-%m-%d')), use_container_width=True, hide_index=True)
         return
 
+    # Vista Dueño
     for bus in buses:
-        bus_df = df[df['bus'] == bus].sort_values('date', ascending=False)
+        bus_df = df[df['bus'] == bus]
         if bus_df.empty: continue
-        latest = bus_df.iloc[0]
+        
+        current_km = bus_df['km_current'].max()
+        latest_by_cat = bus_df.sort_values('date', ascending=False).drop_duplicates(subset=['category'])
+        pending = latest_by_cat[latest_by_cat['km_next'] > 0].copy()
         
         color_icon = "🟢"
-        if not bus_df[bus_df['km_next'] > 0].empty:
-            diff = bus_df[bus_df['km_next'] > 0].iloc[0]['km_next'] - latest['km_current']
-            if diff < 0: color_icon = "🔴"
-            elif diff <= 500: color_icon = "🟡"
+        if not pending.empty:
+            pending['diff'] = pending['km_next'] - current_km
+            worst_diff = pending['diff'].min()
+            if worst_diff < 0: color_icon = "🔴"
+            elif worst_diff <= 500: color_icon = "🟡"
 
-        with st.expander(f"{color_icon} BUS {bus} | KM: {latest['km_current']:,.0f}"):
+        with st.expander(f"{color_icon} BUS {bus} | KM Real: {current_km:,.0f}"):
             c1, c2 = st.columns([2,1])
             with c1:
                 st.markdown('<div class="metric-box">', unsafe_allow_html=True)
-                st.dataframe(bus_df[['date', 'category', 'km_current', 'mec_cost']].head(3).assign(date=lambda x: x['date'].dt.strftime('%Y-%m-%d')), use_container_width=True, hide_index=True)
+                st.dataframe(bus_df[['date', 'category', 'km_current', 'mec_cost']].sort_values('date', ascending=False).head(3).assign(date=lambda x: x['date'].dt.strftime('%Y-%m-%d')), use_container_width=True, hide_index=True)
                 st.markdown('</div>', unsafe_allow_html=True)
             
             with c2:
@@ -373,13 +391,36 @@ def render_reports(df):
         c1.plotly_chart(px.pie(df, values='total_cost', names='category', title='Gastos por Categoría'), use_container_width=True)
         c2.plotly_chart(px.bar(df, x='bus', y='total_cost', title='Gastos por Unidad'), use_container_width=True)
 
-    with t2:
-        last_km = df.sort_values('date').groupby('bus')['km_current'].last()
-        view = df[df['km_next'] > 0].sort_values('date', ascending=False).drop_duplicates(subset=['bus', 'category'])
-        data = [{"bus": r['bus'], "Estado": "🔴 VENCIDO" if (r['km_next'] - last_km.get(r['bus'],0)) < 0 else "🟢 OK", "Item": r['category']} for _, r in view.iterrows()]
+   with t2:
+        # 1. Obtener el KM máximo real de cada bus
+        max_km = df.groupby('bus')['km_current'].max()
+        
+        # 2. Último registro por categoría y bus, sea preventivo o correctivo
+        latest_cat = df.sort_values('date', ascending=False).drop_duplicates(subset=['bus', 'category'])
+        
+        # 3. Filtrar solo aquellos que aún esperan un preventivo
+        view = latest_cat[latest_cat['km_next'] > 0].copy()
+        
+        data = []
+        for _, r in view.iterrows():
+            current_bus_km = max_km.get(r['bus'], 0)
+            diff = r['km_next'] - current_bus_km
+            
+            if diff < 0:
+                est = "🔴 VENCIDO"
+            elif diff <= 500:
+                est = "🟡 PRÓXIMO"
+            else:
+                est = "🟢 OK"
+                
+            data.append({"bus": r['bus'], "Estado": est, "Item": r['category'], "diff": diff})
+            
         if data:
-            st.dataframe(pd.DataFrame(data).sort_values('bus'), use_container_width=True, hide_index=True)
-
+            # Ordenamos para mostrar los vencidos primero en la tabla
+            df_status = pd.DataFrame(data).sort_values(by=['diff', 'bus'])
+            st.dataframe(df_status[['bus', 'Estado', 'Item']], use_container_width=True, hide_index=True)
+        else:
+            st.success("No hay mantenimientos preventivos programados.")
     with t3:
         st.subheader("📜 Bitácora de Movimientos")
         df_sorted = df.sort_values('date', ascending=False)
