@@ -9,19 +9,35 @@ import plotly.express as px  # Librería para gráficos visuales
 import time
 import urllib.parse
 import base64 # Asegúrate de tener este import al inicio del archivo app.py
+from datetime 
+import datetime, timedelta
+
+def get_local_time():
+    # Ajuste para Ecuador (UTC-5)
+    return (datetime.now() - timedelta(hours=5)).isoformat()
+
 
 def render_workshop(user, providers):
     st.header("🛠️ Registro de Taller")
     
+    # 1. Ajuste de Hora Local (Ecuador UTC-5)
+    # Esto evita que los registros salgan con fecha de mañana
+    fecha_ecuador = (datetime.now() - timedelta(hours=5)).isoformat()
+    
     mecs = [p['name'] for p in providers if p['type'] == "Mecánico"]
     coms = [p['name'] for p in providers if p['type'] == "Comercio"]
     
-    with st.form("workshop_form", clear_on_submit=False):
+    # --- 📸 CÁMARA FUERA DEL FORMULARIO ---
+    # Sacarla del form es la única forma de que Streamlit valide la foto correctamente
+    st.write("📸 **Foto del trabajo o factura (Obligatoria)**")
+    foto_archivo = st.camera_input("Capturar evidencia", key="workshop_camera")
+    
+    if not foto_archivo:
+        st.info("👆 Por favor, toma la foto primero para habilitar el guardado.")
+
+    # --- 📝 FORMULARIO DE DATOS ---
+    with st.form("workshop_form_data"):
         tp = st.radio("Tipo", ["Preventivo", "Correctivo"], horizontal=True)
-        
-        # 📸 CAMARA OBLIGATORIA
-        st.write("📸 **Foto del trabajo o factura (Obligatoria)**")
-        foto_archivo = st.camera_input("Capturar evidencia")
         
         c1, c2 = st.columns(2)
         cat = c1.selectbox("Categoría", ["Aceite Motor", "Caja", "Corona", "Frenos", "Llantas", "Suspensión", "Eléctrico", "Otro"])
@@ -31,21 +47,29 @@ def render_workshop(user, providers):
         kn = c2.number_input("Próximo", min_value=ka) if tp == "Preventivo" else 0
         
         st.divider()
-        mn = c1.selectbox("Mecánico", ["N/A"] + mecs)
-        mc = c1.number_input("Mano Obra $")
-        mp = c1.number_input("Abono MO $", max_value=mc)
+        col_m, col_r = st.columns(2)
         
-        rn = c2.selectbox("Comercio", ["N/A"] + coms)
-        rc = c2.number_input("Repuestos $")
-        rp = c2.number_input("Abono Rep $", max_value=rc)
+        # Mecánico
+        mn = col_m.selectbox("Mecánico", ["N/A"] + mecs)
+        mc = col_m.number_input("Mano Obra $", min_value=0.0)
+        mp = col_m.number_input("Abono MO $", min_value=0.0, max_value=10000.0) # Quitamos max_value=mc para permitir correcciones
         
-        if st.form_submit_button("💾 GUARDAR", type="primary", use_container_width=True):
+        # Repuestos
+        rn = col_r.selectbox("Comercio", ["N/A"] + coms)
+        rc = col_r.number_input("Repuestos $", min_value=0.0)
+        rp = col_r.number_input("Abono Rep $", min_value=0.0, max_value=10000.0)
+        
+        # Botón de envío
+        enviar = st.form_submit_button("💾 GUARDAR REGISTRO", type="primary", use_container_width=True)
+        
+        if enviar:
             if not foto_archivo:
-                st.error("❌ No puedes guardar sin tomar una foto.")
+                st.error("❌ ERROR: Debes tomar la foto antes de guardar.")
             elif ka <= 0:
-                st.error("❌ El kilometraje debe ser mayor a 0.")
+                st.error("❌ ERROR: El kilometraje debe ser mayor a 0.")
             else:
-                # --- PROCESAR FOTO A TEXTO ---
+                # --- PROCESAR FOTO A TEXTO (Base64) ---
+                import base64
                 bytes_data = foto_archivo.getvalue()
                 base64_photo = base64.b64encode(bytes_data).decode()
                 
@@ -53,7 +77,7 @@ def render_workshop(user, providers):
                 REFS["data"].collection("logs").add({
                     "fleetId": user['fleet'],
                     "bus": user['bus'],
-                    "date": datetime.now().isoformat(),
+                    "date": fecha_ecuador, # <--- HORA DE ECUADOR
                     "category": cat,
                     "observations": obs,
                     "km_current": ka,
@@ -64,11 +88,11 @@ def render_workshop(user, providers):
                     "com_name": rn,
                     "com_cost": rc,
                     "com_paid": rp,
-                    "photo_b64": base64_photo # La foto ahora es parte del documento
+                    "photo_b64": base64_photo
                 })
                 
                 st.cache_data.clear()
-                st.success("✅ Registro y foto guardados")
+                st.success("✅ ¡Registro y foto guardados con éxito!")
                 time.sleep(1)
                 st.rerun()
 
@@ -704,12 +728,40 @@ def render_workshop(user, providers):
                 st.rerun()
 
 def render_fuel():
-    u = st.session_state.user; st.header("⛽ Combustible")
-    with st.form("f"):
-        k = st.number_input("KM"); g = st.number_input("Gal"); c = st.number_input("$ Total")
-        if st.form_submit_button("Registrar"):
-            REFS["data"].collection("logs").add({"fleetId":u['fleet'],"bus":u['bus'],"date":datetime.now().isoformat(),"category":"Combustible","km_current":k,"gallons":g,"com_cost":c,"com_paid":c})
-            fetch_fleet_data.clear(); st.success("OK"); st.rerun()
+    u = st.session_state.user
+    st.header("⛽ Registro de Combustible")
+    
+    # 1. Ajuste de Hora Local (Ecuador UTC-5)
+    # Evita que el registro salga con fecha de mañana
+    fecha_ecuador = (datetime.now() - timedelta(hours=5)).isoformat()
+    
+    with st.form("fuel_form", clear_on_submit=True):
+        c1, c2, c3 = st.columns(3)
+        k = c1.number_input("Kilometraje Actual", min_value=0)
+        g = c2.number_input("Galones", min_value=0.0)
+        c = c3.number_input("Costo Total $", min_value=0.0)
+        
+        if st.form_submit_button("🚀 REGISTRAR CARGA", type="primary", use_container_width=True):
+            if k > 0 and g > 0 and c > 0:
+                # 2. Guardado en Firebase con fecha corregida
+                REFS["data"].collection("logs").add({
+                    "fleetId": u['fleet'],
+                    "bus": u['bus'],
+                    "date": fecha_ecuador, # <--- HORA DE ECUADOR
+                    "category": "Combustible",
+                    "km_current": k,
+                    "gallons": g,
+                    "com_cost": c,
+                    "com_paid": c # Se marca como pagado automáticamente
+                })
+                
+                # 3. Limpieza de caché para actualizar gráficos y tablas
+                st.cache_data.clear() 
+                st.success("✅ Carga registrada correctamente")
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.error("❌ Por favor, llena todos los campos con valores mayores a 0.")
 
 def render_personnel(user):
     st.header("👥 Gestión de Personal")
