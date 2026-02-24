@@ -16,7 +16,7 @@ APP_CONFIG = {
     "MASTER_KEY": "ADMIN123",
     "VERSION": "10.5.0 Itero Master AI", 
     "LOGO_URL": "Gemini_Generated_Image_buyjdmbuyjdmbuyj.png", 
-    "BOSS_PHONE": "0999999999" # <--- CAMBIA ESTO POR TU NÚMERO REAL
+    "BOSS_PHONE": "0999999999" 
 }
 
 UI_COLORS = {
@@ -29,15 +29,15 @@ UI_COLORS = {
 
 st.set_page_config(page_title="Itero", layout="wide", page_icon="🚛")
 
-st.markdown(f"""
+st.markdown("""
     <style>
-    .main-title {{ font-size: 65px; font-weight: 900; background: linear-gradient(45deg, #1E1E1E, #4A4A4A); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; margin-bottom: 20px; }}
-    .stButton>button {{ width: 100%; border-radius: 12px; border: none; padding: 12px 20px; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); color: #1E1E1E; font-weight: 700; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: all 0.3s ease; }}
-    .stButton>button:hover {{ transform: translateY(-2px); box-shadow: 0 6px 12px rgba(0,0,0,0.15); background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e0 100%); }}
-    div.stButton > button:first-child[kind="primary"] {{ background: linear-gradient(135deg, #1e1e1e 0%, #434343 100%); color: white; }}
-    .btn-whatsapp {{ display: inline-block; background: linear-gradient(135deg, #25D366 0%, #128C7E 100%); color: white !important; text-decoration: none; padding: 15px 25px; border-radius: 12px; font-weight: 800; text-align: center; width: 100%; box-shadow: 0 4px 15px rgba(37, 211, 102, 0.3); transition: all 0.3s ease; border: none; }}
-    .btn-whatsapp:hover {{ transform: scale(1.02); box-shadow: 0 6px 20px rgba(37, 211, 102, 0.4); }}
-    .metric-box {{ background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); border: 1px solid #f0f0f0; }}
+    .main-title { font-size: 65px; font-weight: 900; background: linear-gradient(45deg, #1E1E1E, #4A4A4A); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; margin-bottom: 20px; }
+    .stButton>button { width: 100%; border-radius: 12px; border: none; padding: 12px 20px; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); color: #1E1E1E; font-weight: 700; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: all 0.3s ease; }
+    .stButton>button:hover { transform: translateY(-2px); box-shadow: 0 6px 12px rgba(0,0,0,0.15); background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e0 100%); }
+    div.stButton > button:first-child[kind="primary"] { background: linear-gradient(135deg, #1e1e1e 0%, #434343 100%); color: white; }
+    .btn-whatsapp { display: inline-block; background: linear-gradient(135deg, #25D366 0%, #128C7E 100%); color: white !important; text-decoration: none; padding: 15px 25px; border-radius: 12px; font-weight: 800; text-align: center; width: 100%; box-shadow: 0 4px 15px rgba(37, 211, 102, 0.3); transition: all 0.3s ease; border: none; }
+    .btn-whatsapp:hover { transform: scale(1.02); box-shadow: 0 6px 20px rgba(37, 211, 102, 0.4); }
+    .metric-box { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); border: 1px solid #f0f0f0; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -49,7 +49,7 @@ def format_phone(phone):
     if not p.startswith("593"): return "593" + p 
     return p
 
-# --- 2. CONFIGURACIÓN DE IA (OPTIMIZADA) ---
+# --- 2. CONFIGURACIÓN DE IA ---
 try:
     if "GEMINI_KEY" in st.secrets:
         genai.configure(api_key=st.secrets["GEMINI_KEY"]["api_key"])
@@ -96,7 +96,7 @@ def get_ai_analysis(df_bus, bus_id, fleet_id):
     except Exception as e:
         return f"Error en análisis IA: {str(e)}"
 
-# --- 3. CAPA DE DATOS (FIREBASE INTEGRADO) ---
+# --- 3. CAPA DE DATOS ---
 @st.cache_resource
 def get_db_client():
     try:
@@ -163,7 +163,7 @@ def ui_render_login():
             f_in = col1.text_input("Código de Flota").upper().strip()
             u_in = col2.text_input("Usuario").upper().strip()
             
-            # --- CORRECCIÓN: Separamos los tres perfiles claramente ---
+            # --- Perfiles separados ---
             r_in = st.selectbox("Perfil", ["Conductor", "Mecánico", "Administrador/Dueño"])
             
             pass_in = st.text_input("Contraseña", type="password") if "Adm" in r_in else ""
@@ -183,7 +183,7 @@ def ui_render_login():
         if st.text_input("Master Key", type="password") == APP_CONFIG["MASTER_KEY"]:
             render_super_admin()
 
-
+# --- FUNCIÓN DE LOGIN ÚNICA Y DEFINITIVA ---
 def handle_login(f_in, u_in, r_in, pass_in):
     if not REFS: st.error("Offline"); return
     doc = REFS["fleets"].document(f_in).get()
@@ -194,7 +194,6 @@ def handle_login(f_in, u_in, r_in, pass_in):
         
     data = doc.to_dict()
     
-    # Bloque de suspensión
     if data.get('status') == 'suspended':
         sup_snap = REFS["data"].get()
         contacto_maestro = "jlmaldonado173@gmail.com o 0964014007"
@@ -216,15 +215,14 @@ def handle_login(f_in, u_in, r_in, pass_in):
         else: 
             st.error("🔒 Contraseña incorrecta.")
     else:
-        # Buscamos al usuario en la base de datos
         auth = REFS["fleets"].document(f_in).collection("authorized_users").document(u_in).get()
         
         if auth.exists and auth.to_dict().get('active', True): 
             user_data = auth.to_dict()
-            db_role = user_data.get('role', 'driver') # Si es un usuario muy antiguo, asume conductor
+            db_role = user_data.get('role', 'driver')
             assigned_bus = user_data.get('bus', '0')
             
-            # --- NUEVA VALIDACIÓN ESTRICTA DE ROLES ---
+            # Validación estricta
             if "Mec" in r_in:
                 if db_role == 'mechanic':
                     access = True; role = 'mechanic'
@@ -237,97 +235,6 @@ def handle_login(f_in, u_in, r_in, pass_in):
                     st.error("❌ Acceso denegado: Este usuario no está registrado como Conductor.")
         else: 
             st.error("❌ Usuario no autorizado. Verifique que el nombre esté escrito exactamente igual.")
-
-    if access:
-        st.session_state.user = {'role': role, 'fleet': f_in, 'name': u_in, 'bus': assigned_bus}
-        st.rerun()
-
-def handle_login(f_in, u_in, r_in, pass_in):
-    if not REFS: st.error("Offline"); return
-    doc = REFS["fleets"].document(f_in).get()
-    
-    if not doc.exists: 
-        st.error("❌ Código de flota no registrado.")
-        return
-        
-    data = doc.to_dict()
-    
-    # Bloque de suspensión
-    if data.get('status') == 'suspended':
-        sup_snap = REFS["data"].get()
-        contacto_maestro = "jlmaldonado173@gmail.com o 0964014007"
-        contacto = sup_snap.to_dict().get("support_contact", contacto_maestro) if sup_snap.exists else contacto_maestro
-        
-        st.warning(f"""
-            ### ℹ️ Aviso de Cuenta
-            Estimado usuario, su acceso a **Itero AI** se encuentra temporalmente inactivo. 
-            Para reactivar sus servicios, le invitamos cordialmente a ponerse en contacto con nuestra administración:
-            📧 **{contacto}**
-        """)
-        return
-
-    access = False; role = ""; assigned_bus = "0"
-    
-    if "Adm" in r_in:
-        if data.get('password') == pass_in: 
-            access = True; role = 'owner'
-        else: 
-            st.error("🔒 Contraseña incorrecta.")
-    else:
-        # --- CORRECCIÓN: Lógica dinámica de roles ---
-        auth = REFS["fleets"].document(f_in).collection("authorized_users").document(u_in).get()
-        
-        if auth.exists and auth.to_dict().get('active', True): 
-            user_data = auth.to_dict()
-            access = True
-            # Leemos el rol real de Firebase. Si por error no tiene, asume conductor por defecto
-            role = user_data.get('role', 'driver') 
-            assigned_bus = user_data.get('bus', '0')
-        else: 
-            st.error("❌ Usuario no autorizado. Verifique que el nombre esté escrito exactamente igual.")
-
-    if access:
-        st.session_state.user = {'role': role, 'fleet': f_in, 'name': u_in, 'bus': assigned_bus}
-        st.rerun()
-def handle_login(f_in, u_in, r_in, pass_in):
-    if not REFS: st.error("Offline"); return
-    doc = REFS["fleets"].document(f_in).get()
-    
-    if not doc.exists: 
-        st.error("❌ Código de flota no registrado.")
-        return
-        
-    data = doc.to_dict()
-    
-    if data.get('status') == 'suspended':
-        sup_snap = REFS["data"].get()
-        contacto_maestro = "jlmaldonado173@gmail.com o 0964014007"
-        contacto = sup_snap.to_dict().get("support_contact", contacto_maestro) if sup_snap.exists else contacto_maestro
-        
-        st.warning(f"""
-            ### ℹ️ Aviso de Cuenta
-            Estimado usuario, su acceso a **Itero AI** se encuentra temporalmente inactivo. 
-            Queremos que siga gestionando su flota con la mejor tecnología, por lo cual, para reactivar sus servicios, le invitamos cordialmente a ponerse en contacto con nuestra administración:
-            
-            📧 **{contacto}**
-            
-            Estaremos encantados de ayudarle a continuar con su operación.
-        """)
-        return
-
-    access = False; role = ""; assigned_bus = "0"
-    if "Adm" in r_in:
-        if data.get('password') == pass_in: 
-            access = True; role = 'owner'
-        else: 
-            st.error("🔒 Contraseña incorrecta.")
-    else:
-        auth = REFS["fleets"].document(f_in).collection("authorized_users").document(u_in).get()
-        if auth.exists and auth.to_dict().get('active', True): 
-            access = True; role = 'driver'
-            assigned_bus = auth.to_dict().get('bus', '0')
-        else: 
-            st.error("❌ Usuario no autorizado.")
 
     if access:
         st.session_state.user = {'role': role, 'fleet': f_in, 'name': u_in, 'bus': assigned_bus}
@@ -354,7 +261,7 @@ def render_super_admin():
         
         if st.button("Guardar Contacto Maestro"):
             REFS["data"].set({"support_contact": c_msg}, merge=True)
-            st.success("✅ ¡Contacto guardado! Este mensaje aparecerá a las flotas bloqueadas.")
+            st.success("✅ ¡Contacto guardado!")
 
     st.subheader("🏢 Gestión de Empresas Registradas")
     
@@ -391,7 +298,6 @@ def render_radar(df, user):
     if df.empty or 'bus' not in df.columns: 
         st.info("⏳ Sin datos actuales."); return
 
-   # Tanto el dueño como el mecánico pueden ver todas las unidades
     buses = sorted(df['bus'].unique()) if user['role'] in ['owner', 'mechanic'] else [user['bus']]
     
     if user['role'] == 'driver':
@@ -399,21 +305,14 @@ def render_radar(df, user):
         bus_df = df[df['bus'] == bus]
         if bus_df.empty: st.warning("Sin historial."); return
         
-        # 1. KM Real: El valor más alto registrado (ignora los 0 de los mecánicos)
         current_km = bus_df['km_current'].max()
-        
-        # 2. Última intervención REAL por cada categoría
         latest_by_cat = bus_df.sort_values('date', ascending=False).drop_duplicates(subset=['category'])
-        
-        # 3. Nos quedamos solo con las que esperan preventivo
         pending = latest_by_cat[latest_by_cat['km_next'] > 0].copy()
         
         color = "#28a745"; msg = "✅ UNIDAD OPERATIVA"; wa = ""
         
         if not pending.empty:
-            # Calcular cuánto falta para cada categoría
             pending['diff'] = pending['km_next'] - current_km
-            # Obtener el peor caso (el que esté más vencido o más próximo)
             worst_case = pending.loc[pending['diff'].idxmin()]
             diff = worst_case['diff']
             
@@ -426,7 +325,6 @@ def render_radar(df, user):
                 msg = f"⚠️ PRÓXIMO: {worst_case['category']}"
                 wa = f"Jefe, al Bus {bus} le toca {worst_case['category']} pronto."
 
-        # UI Tarjeta
         st.markdown(f"""
             <div class="driver-card" style="background:{color}; border:none; padding:30px; border-radius:15px; color:white;">
                 <h1 style="margin:0; font-size:45px; letter-spacing:-1px;">BUS {bus}</h1>
@@ -442,26 +340,20 @@ def render_radar(df, user):
             with st.spinner("IA Analizando tu unidad..."):
                 st.info(get_ai_analysis(bus_df, bus, user['fleet']))
 
-        # --- LÓGICA NUEVA: WHATSAPP DINÁMICO ---
         if wa:
-            # Vamos a buscar el número del dueño a la base de datos
             fleet_doc = REFS["fleets"].document(user['fleet']).get()
             boss_phone = fleet_doc.to_dict().get("boss_phone", "") if fleet_doc.exists else ""
             
             if boss_phone:
-                # Si el dueño configuró su número, armamos el link
                 link = f"https://wa.me/{format_phone(boss_phone)}?text={urllib.parse.quote(wa)}"
                 st.markdown(f'<a href="{link}" target="_blank" class="btn-whatsapp" style="text-decoration:none;">📲 NOTIFICAR AL JEFE</a>', unsafe_allow_html=True)
             else:
-                # Si no lo ha configurado, le avisamos al conductor
                 st.warning("⚠️ Botón de WhatsApp desactivado: El administrador aún no ha configurado su número de teléfono en la sección 'Gestión'.")
-        # ----------------------------------------
         
         st.write("### 📜 Mi Historial")
         st.dataframe(bus_df[['date', 'category', 'observations', 'km_current']].sort_values('date', ascending=False).head(10).assign(date=lambda x: x['date'].dt.strftime('%Y-%m-%d')), use_container_width=True, hide_index=True)
         return
 
-    # Vista Dueño
     for bus in buses:
         bus_df = df[df['bus'] == bus]
         if bus_df.empty: continue
@@ -513,13 +405,8 @@ def render_reports(df):
         c2.plotly_chart(px.bar(df, x='bus', y='total_cost', title='Gastos por Unidad'), use_container_width=True)
 
     with t2:
-        # 1. Obtener el KM máximo real de cada bus
         max_km = df.groupby('bus')['km_current'].max()
-        
-        # 2. Último registro por categoría y bus, sea preventivo o correctivo
         latest_cat = df.sort_values('date', ascending=False).drop_duplicates(subset=['bus', 'category'])
-        
-        # 3. Filtrar solo aquellos que aún esperan un preventivo
         view = latest_cat[latest_cat['km_next'] > 0].copy()
         
         data = []
@@ -537,7 +424,6 @@ def render_reports(df):
             data.append({"bus": r['bus'], "Estado": est, "Item": r['category'], "diff": diff})
             
         if data:
-            # Ordenamos para mostrar los vencidos primero en la tabla
             df_status = pd.DataFrame(data).sort_values(by=['diff', 'bus'])
             st.dataframe(df_status[['bus', 'Estado', 'Item']], use_container_width=True, hide_index=True)
         else:
@@ -570,6 +456,7 @@ def render_reports(df):
                             st.error("Error al cargar imagen")
                     else:
                         st.info("🚫 Sin foto")
+
 def render_accounting(df, user, phone_map):
     st.header("💰 Contabilidad y Abonos")
     
@@ -658,7 +545,6 @@ def render_workshop(user, providers):
     coms = [p['name'] for p in providers if p['type'] == "Comercio"]
     
     st.write("📸 **Foto del trabajo o factura (Opcional)**")
-    # Llave dinámica para evitar conflictos de estado entre distintas unidades
     foto_archivo = st.camera_input("Capturar evidencia", key=f"cam_{user.get('bus', 'default')}")
     
     with st.form("workshop_form_data"):
@@ -801,11 +687,9 @@ def render_personnel(user):
 def render_fleet_management(df, user):
     st.header("🚛 Gestión de Flota")
     
-    # --- 1. NUEVA CONFIGURACIÓN: WHATSAPP DEL DUEÑO ---
     with st.expander("📱 Configuración de Alertas (WhatsApp del Dueño)", expanded=True):
         st.info("Ingresa el número donde recibirás las alertas de mantenimientos vencidos de tus conductores.")
         
-        # Recuperar el número actual de la base de datos
         fleet_doc = REFS["fleets"].document(user['fleet']).get()
         current_phone = fleet_doc.to_dict().get("boss_phone", "") if fleet_doc.exists else ""
         
@@ -823,7 +707,6 @@ def render_fleet_management(df, user):
     
     st.divider()
 
-    # --- 2. GESTIÓN DE UNIDADES (CON PROTECCIÓN DE FLOTA VACÍA) ---
     buses = sorted(df['bus'].unique()) if 'bus' in df.columns and not df.empty else []
     c1, c2 = st.columns(2)
     
@@ -858,7 +741,6 @@ def render_fleet_management(df, user):
 
     st.divider()
 
-    # --- 3. TRANSFERENCIA DIRECTA ---
     st.subheader("🚀 Transferencia Directa a otro Dueño Itero")
     st.info("Esta función copia todo el historial de un bus a otra empresa Itero usando su Código de Flota.")
     
@@ -981,7 +863,6 @@ def render_directory(providers, user):
 def render_mechanic_work(user, df, providers):
     st.header("🛠️ Registrar Trabajo Mecánico")
     
-    # --- MEJORA: Lista Maestra de Buses ---
     # 1. Traemos los buses que ya tienen historial
     buses_activos = set(df['bus'].unique()) if 'bus' in df.columns and not df.empty else set()
     
@@ -997,7 +878,6 @@ def render_mechanic_work(user, df, providers):
         
     buses_disponibles = sorted(list(buses_activos)) if buses_activos else ["Sin Unidades"]
     
-    # --- UI DE REGISTRO ---
     bus_id = st.selectbox("🚛 Seleccionar Unidad a Reparar", buses_disponibles)
     st.info(f"Registrando trabajo para la Unidad: **{bus_id}**")
     
@@ -1044,6 +924,7 @@ def render_mechanic_work(user, df, providers):
                 st.success("✅ Reporte enviado. El dueño ya puede ver los costos en Contabilidad.")
                 time.sleep(1)
                 st.rerun()
+
 def main():
     if 'user' not in st.session_state:
         ui_render_login()
@@ -1060,7 +941,6 @@ def main():
         phone_map = {p['name']: p.get('phone', '') for p in provs}
 
         # --- LÓGICA POR ROLES ---
-        
         if u['role'] == 'driver':
             st.subheader("⛽ Carga de Combustible")
             with st.form("fuel_driver_main"):
@@ -1091,7 +971,6 @@ def main():
         elif u['role'] == 'mechanic':
             st.subheader(f"🛠️ Centro de Servicio: {u['name']}")
             
-            # El menú ahora usa el DataFrame completo (df) para ver toda la flota
             menu = {
                 "🏠 Radar de Taller": lambda: render_radar(df, u),
                 "📝 Registrar Trabajo": lambda: render_mechanic_work(u, df, provs),
