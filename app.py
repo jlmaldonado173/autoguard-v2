@@ -436,7 +436,8 @@ def render_radar(df, user):
     if df.empty or 'bus' not in df.columns: 
         st.info("⏳ Sin datos actuales."); return
 
-    buses = sorted(df['bus'].unique()) if user['role']=='owner' else [user['bus']]
+    # Definir qué buses ve cada quien
+    buses = sorted(df['bus'].unique()) if user['role'] == 'owner' else [user['bus']]
     
     if user['role'] == 'driver':
         bus = user['bus']
@@ -449,19 +450,19 @@ def render_radar(df, user):
         if not pending.empty:
             diff = pending.iloc[0]['km_next'] - latest['km_current']
             if diff < 0: 
-                color = "linear-gradient(135deg, #FF4B4B 0%, #8B0000 100%)" # Rojo moderno
+                color = "linear-gradient(135deg, #FF4B4B 0%, #8B0000 100%)"
                 msg = f"🚨 VENCIDO: {pending.iloc[0]['category']}"
                 wa = f"Jefe, mi unidad {bus} tiene vencido {pending.iloc[0]['category']}."
             elif diff <= 500: 
-                color = "linear-gradient(135deg, #ffc107 0%, #e67e22 100%)" # Naranja moderno
+                color = "linear-gradient(135deg, #ffc107 0%, #e67e22 100%)"
                 msg = f"⚠️ PRÓXIMO: {pending.iloc[0]['category']}"
                 wa = f"Jefe, al Bus {bus} le toca {pending.iloc[0]['category']} pronto."
             else:
-                color = "linear-gradient(135deg, #28a745 0%, #1e7e34 100%)" # Verde moderno
+                color = "linear-gradient(135deg, #28a745 0%, #1e7e34 100%)"
 
         # Tarjeta de Conductor Moderna
         st.markdown(f"""
-            <div class="driver-card" style="background:{color}; border:none; padding:30px;">
+            <div class="driver-card" style="background:{color}; border:none; padding:30px; border-radius:15px; color:white;">
                 <h1 style="margin:0; font-size:45px; letter-spacing:-1px;">BUS {bus}</h1>
                 <h3 style="opacity:0.9; font-weight:400;">{msg}</h3>
                 <div style="background:rgba(255,255,255,0.2); display:inline-block; padding:10px 30px; border-radius:50px; margin-top:15px;">
@@ -470,16 +471,21 @@ def render_radar(df, user):
             </div>
         """, unsafe_allow_html=True)
 
+        # SECCIÓN DE IA PARA CONDUCTOR
+        st.write("")
+        if st.button(f"🤖 Consultar Diagnóstico IA (Bus {bus})", key=f"ai_drv_{bus}", type="primary", use_container_width=True):
+            with st.spinner("IA Analizando tu unidad..."):
+                st.info(get_ai_analysis(bus_df, bus, user['fleet']))
+
         if wa:
             link = f"https://wa.me/{format_phone(APP_CONFIG['BOSS_PHONE'])}?text={urllib.parse.quote(wa)}"
-            st.markdown(f'<a href="{link}" target="_blank" class="btn-whatsapp">📲 NOTIFICAR AL JEFE</a>', unsafe_allow_html=True)
-            st.write("") # Espaciador
+            st.markdown(f'<a href="{link}" target="_blank" class="btn-whatsapp" style="text-decoration:none;">📲 NOTIFICAR AL JEFE</a>', unsafe_allow_html=True)
         
         st.write("### 📜 Mi Historial")
         st.dataframe(bus_df[['date', 'category', 'observations', 'km_current']].head(10).assign(date=lambda x: x['date'].dt.strftime('%Y-%m-%d')), use_container_width=True, hide_index=True)
         return
 
-    # VISTA DUEÑO
+    # VISTA DUEÑO / OTROS ROLES (Mecánico u Owner)
     for bus in buses:
         bus_df = df[df['bus'] == bus].sort_values('date', ascending=False)
         if bus_df.empty: continue
@@ -499,8 +505,8 @@ def render_radar(df, user):
                 st.markdown('</div>', unsafe_allow_html=True)
             
             with c2:
-                # Botón de IA con estilo moderno (usando el tipo primario de Streamlit que ya estilizamos)
-                if st.button(f"🤖 Diagnóstico IA", key=f"ai_{bus}", type="primary", use_container_width=True):
+                # Botón de IA disponible en el expander
+                if st.button(f"🤖 Diagnóstico IA", key=f"ai_own_{bus}", type="primary", use_container_width=True):
                     with st.spinner("IA Analizando..."):
                         st.info(get_ai_analysis(bus_df, bus, user['fleet']))
 
@@ -738,9 +744,8 @@ def render_fuel():
     u = st.session_state.user
     st.header("⛽ Registro de Combustible")
     
-    # 1. Ajuste de Hora Local (Ecuador UTC-5)
-    # Evita que el registro salga con fecha de mañana
-    fecha_ecuador = (datetime.now() - timedelta(hours=5)).isoformat()
+    # 1. Hora Automática (Usa la zona horaria de donde esté el usuario)
+    fecha_actual = datetime.now().isoformat()
     
     with st.form("fuel_form", clear_on_submit=True):
         c1, c2, c3 = st.columns(3)
@@ -750,11 +755,11 @@ def render_fuel():
         
         if st.form_submit_button("🚀 REGISTRAR CARGA", type="primary", use_container_width=True):
             if k > 0 and g > 0 and c > 0:
-                # 2. Guardado en Firebase con fecha corregida
+                # 2. Guardado en Firebase con la hora automática detectada
                 REFS["data"].collection("logs").add({
                     "fleetId": u['fleet'],
                     "bus": u['bus'],
-                    "date": fecha_ecuador, # <--- HORA DE ECUADOR
+                    "date": fecha_actual, # <--- HORA AUTOMÁTICA
                     "category": "Combustible",
                     "km_current": k,
                     "gallons": g,
@@ -1098,16 +1103,23 @@ def main():
         # 2. ROL MECÁNICO
         elif u['role'] == 'mechanic':
             st.subheader(f"🛠️ Centro de Servicio: {u['name']}")
+            
+            # Buscamos unidades disponibles en los logs
             buses_disponibles = sorted(df['bus'].unique()) if not df.empty else ["Sin Unidades"]
             bus_sel = st.sidebar.selectbox("Unidad a Reparar", buses_disponibles)
+            
+            # Filtramos los datos estrictamente para el bus seleccionado
+            # Esto es clave para que la IA no analice buses que no corresponden
             df_bus = df[df['bus'] == bus_sel] if not df.empty else df
 
             menu = {
+                "🏠 Estado del Bus e IA": lambda: render_radar(df_bus, u),
                 "📝 Registrar Trabajo": lambda: render_mechanic_work(u, bus_sel, provs),
-                "🏠 Estado del Bus": lambda: render_radar(df_bus, u),
                 "📊 Historial Técnico": lambda: render_reports(df_bus),
                 "🏢 Directorio": lambda: render_directory(provs, u)
             }
+            
+            # Colocamos "Estado del Bus" como primera opción para que vea el diagnóstico IA de entrada
             choice = st.sidebar.radio("Menú Mecánico:", list(menu.keys()))
             menu[choice]()
 
