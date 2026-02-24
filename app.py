@@ -10,28 +10,23 @@ import time
 import urllib.parse
 import base64
 
-# Función global corregida para la hora de Ecuador
-def get_local_time():
-    # Restamos 5 horas al tiempo UTC del servidor
-    return (datetime.now() - timedelta(hours=5)).isoformat()
-
 def render_workshop(user, providers):
     st.header("🛠️ Registro de Taller")
     
-    # 1. Ajuste de Hora Local (Ecuador UTC-5)
-    # Esto evita que los registros salgan con fecha de mañana
-    fecha_ecuador = (datetime.now() - timedelta(hours=5)).isoformat()
+    # --- HORA AUTOMÁTICA DEL SISTEMA ---
+    # Captura la hora exacta del momento y lugar donde se registra
+    fecha_registro = datetime.now().isoformat()
     
     mecs = [p['name'] for p in providers if p['type'] == "Mecánico"]
     coms = [p['name'] for p in providers if p['type'] == "Comercio"]
     
-    # --- 📸 CÁMARA FUERA DEL FORMULARIO ---
-    # Sacarla del form es la única forma de que Streamlit valide la foto correctamente
-    st.write("📸 **Foto del trabajo o factura (Obligatoria)**")
-    foto_archivo = st.camera_input("Capturar evidencia", key="workshop_camera")
+    # --- 📸 CÁMARA FUERA DEL FORMULARIO (OPCIONAL) ---
+    st.write("📸 **Foto del trabajo o factura (Opcional)**")
+    # Al estar fuera del form, se procesa en tiempo real y no bloquea el guardado
+    foto_archivo = st.camera_input("Capturar evidencia", key="workshop_camera_v5")
     
     if not foto_archivo:
-        st.info("👆 Por favor, toma la foto primero para habilitar el guardado.")
+        st.info("💡 Nota: Puedes subir la foto o continuar solo con los datos si el celular tiene problemas.")
 
     # --- 📝 FORMULARIO DE DATOS ---
     with st.form("workshop_form_data"):
@@ -50,32 +45,33 @@ def render_workshop(user, providers):
         # Mecánico
         mn = col_m.selectbox("Mecánico", ["N/A"] + mecs)
         mc = col_m.number_input("Mano Obra $", min_value=0.0)
-        mp = col_m.number_input("Abono MO $", min_value=0.0, max_value=10000.0) # Quitamos max_value=mc para permitir correcciones
+        mp = col_m.number_input("Abono MO $", min_value=0.0) 
         
         # Repuestos
         rn = col_r.selectbox("Comercio", ["N/A"] + coms)
         rc = col_r.number_input("Repuestos $", min_value=0.0)
-        rp = col_r.number_input("Abono Rep $", min_value=0.0, max_value=10000.0)
+        rp = col_r.number_input("Abono Rep $", min_value=0.0)
         
         # Botón de envío
         enviar = st.form_submit_button("💾 GUARDAR REGISTRO", type="primary", use_container_width=True)
         
         if enviar:
-            if not foto_archivo:
-                st.error("❌ ERROR: Debes tomar la foto antes de guardar.")
-            elif ka <= 0:
+            # VALIDACIÓN: Solo el kilometraje sigue siendo estrictamente obligatorio
+            if ka <= 0:
                 st.error("❌ ERROR: El kilometraje debe ser mayor a 0.")
             else:
-                # --- PROCESAR FOTO A TEXTO (Base64) ---
-                import base64
-                bytes_data = foto_archivo.getvalue()
-                base64_photo = base64.b64encode(bytes_data).decode()
+                # --- PROCESAR FOTO SOLO SI EXISTE ---
+                base64_photo = ""
+                if foto_archivo:
+                    import base64
+                    bytes_data = foto_archivo.getvalue()
+                    base64_photo = base64.b64encode(bytes_data).decode()
                 
                 # --- GUARDAR EN FIREBASE ---
                 REFS["data"].collection("logs").add({
                     "fleetId": user['fleet'],
                     "bus": user['bus'],
-                    "date": fecha_ecuador, # <--- HORA DE ECUADOR
+                    "date": fecha_registro, # <--- Hora automática
                     "category": cat,
                     "observations": obs,
                     "km_current": ka,
@@ -86,11 +82,11 @@ def render_workshop(user, providers):
                     "com_name": rn,
                     "com_cost": rc,
                     "com_paid": rp,
-                    "photo_b64": base64_photo
+                    "photo_b64": base64_photo # Si no hay foto, se guarda vacío
                 })
                 
                 st.cache_data.clear()
-                st.success("✅ ¡Registro y foto guardados con éxito!")
+                st.success("✅ ¡Registro guardado con éxito!")
                 time.sleep(1)
                 st.rerun()
 
