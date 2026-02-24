@@ -642,16 +642,13 @@ def render_workshop(user, providers):
     mecs = [p['name'] for p in providers if p['type'] == "Mecánico"]
     coms = [p['name'] for p in providers if p['type'] == "Comercio"]
     
-    # --- 1. CÁMARA FUERA DEL FORMULARIO (PARA EVITAR ERRORES) ---
-    st.write("📸 **Evidencia Fotográfica (Obligatoria)**")
-    # Usamos una key única para asegurar que se limpie correctamente
-    foto_captura = st.camera_input("Tome una foto del trabajo o factura", key="cam_workshop")
-    
-    if not foto_captura:
-        st.info("👆 Por favor, tome la foto primero para habilitar el formulario de registro.")
+    # --- PASO 1: CÁMARA FUERA DEL FORMULARIO ---
+    # Esto asegura que la foto se guarde en la sesión apenas se toma
+    st.write("📸 **Captura de Evidencia (Obligatoria)**")
+    foto_captura = st.camera_input("Tome la foto de la factura o trabajo", key="camera_workshop_final")
 
-    # --- 2. EL FORMULARIO SOLO PARA DATOS ---
-    with st.form("workshop_form", clear_on_submit=True):
+    # --- PASO 2: EL FORMULARIO DE DATOS ---
+    with st.form("workshop_data_form", clear_on_submit=True):
         tp = st.radio("Tipo de Mantenimiento", ["Preventivo", "Correctivo"], horizontal=True)
         
         c1, c2 = st.columns(2)
@@ -671,22 +668,22 @@ def render_workshop(user, providers):
         rc = col_b.number_input("Costo Repuestos $", min_value=0.0)
         rp = col_b.number_input("Abono Inicial Rep $", min_value=0.0, max_value=rc)
         
+        # Botón de envío
         submit = st.form_submit_button("💾 GUARDAR REGISTRO", type="primary", use_container_width=True)
         
         if submit:
-            # VALIDACIÓN DOBLE
+            # Ahora la validación de foto_captura funcionará correctamente
             if not foto_captura:
-                st.error("❌ ERROR CRÍTICO: No se detectó la foto. Debe tomarla antes de guardar.")
+                st.error("❌ ERROR: Debe tomar la foto arriba antes de presionar Guardar.")
             elif ka <= 0:
-                st.error("❌ ERROR: Debe ingresar el kilometraje actual.")
+                st.error("❌ ERROR: El kilometraje debe ser mayor a 0.")
             else:
-                # --- PROCESAR FOTO A BASE64 ---
+                # Procesar imagen a Base64 para guardarla
                 import base64
-                bytes_data = foto_captura.getvalue()
-                foto_b64 = base64.b64encode(bytes_data).decode()
+                img_bytes = foto_captura.getvalue()
+                foto_b64 = base64.b64encode(img_bytes).decode()
                 
-                # Proceso de guardado
-                datos_registro = {
+                datos = {
                     "fleetId": user['fleet'],
                     "bus": user['bus'],
                     "date": datetime.now().isoformat(),
@@ -694,20 +691,15 @@ def render_workshop(user, providers):
                     "observations": obs,
                     "km_current": ka,
                     "km_next": kn,
-                    "mec_name": mn,
-                    "mec_cost": mc,
-                    "mec_paid": mp,
-                    "com_name": rn,
-                    "com_cost": rc,
-                    "com_paid": rp,
-                    "photo_b64": foto_b64, # Guardamos la foto real
+                    "mec_name": mn, "mec_cost": mc, "mec_paid": mp,
+                    "com_name": rn, "com_cost": rc, "com_paid": rp,
+                    "photo_b64": foto_b64, # Guardamos la imagen real
                     "has_photo": True
                 }
                 
-                REFS["data"].collection("logs").add(datos_registro)
-                
+                REFS["data"].collection("logs").add(datos)
                 st.cache_data.clear()
-                st.success("✅ Registro guardado exitosamente con foto.")
+                st.success("✅ ¡Guardado con éxito!")
                 time.sleep(1)
                 st.rerun()
 
