@@ -5,17 +5,15 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 from google.api_core.exceptions import FailedPrecondition
 import google.generativeai as genai
-import plotly.express as px  # Librería para gráficos visuales
+import plotly.express as px
 import time
 import urllib.parse
-import base64 # Asegúrate de tener este import al inicio del archivo app.py
-from datetime 
-import datetime, timedelta
+import base64
 
+# Función global corregida para la hora de Ecuador
 def get_local_time():
-    # Ajuste para Ecuador (UTC-5)
+    # Restamos 5 horas al tiempo UTC del servidor
     return (datetime.now() - timedelta(hours=5)).isoformat()
-
 
 def render_workshop(user, providers):
     st.header("🛠️ Registro de Taller")
