@@ -922,10 +922,24 @@ def render_directory(providers, user):
 def render_mechanic_work(user, df, providers):
     st.header("🛠️ Registrar Trabajo Mecánico")
     
-    # El mecánico ve todas las unidades de la empresa y elige a cuál reparar
-    buses_disponibles = sorted(df['bus'].unique()) if not df.empty else ["Sin Unidades"]
-    bus_id = st.selectbox("🚛 Seleccionar Unidad a Reparar", buses_disponibles)
+    # --- MEJORA: Lista Maestra de Buses ---
+    # 1. Traemos los buses que ya tienen historial
+    buses_activos = set(df['bus'].unique()) if 'bus' in df.columns and not df.empty else set()
     
+    # 2. Sumamos TODOS los buses que tienen los conductores asignados actualmente
+    try:
+        usuarios = REFS["fleets"].document(user['fleet']).collection("authorized_users").stream()
+        for us in usuarios:
+            b = us.to_dict().get('bus', '0')
+            if b != '0' and b:  # Ignoramos el 0 de los mecánicos
+                buses_activos.add(b)
+    except Exception:
+        pass
+        
+    buses_disponibles = sorted(list(buses_activos)) if buses_activos else ["Sin Unidades"]
+    
+    # --- UI DE REGISTRO ---
+    bus_id = st.selectbox("🚛 Seleccionar Unidad a Reparar", buses_disponibles)
     st.info(f"Registrando trabajo para la Unidad: **{bus_id}**")
     
     coms = [p['name'] for p in providers if p['type'] == "Comercio"]
