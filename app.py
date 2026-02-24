@@ -655,69 +655,82 @@ def render_accounting(df, user, phone_map):
                 st.markdown("---")
 
 def render_workshop(user, providers):
-    st.header("🛠️ Gestión de Taller")
+    st.header("🛠️ Registro de Taller")
+    
+    # --- HORA AUTOMÁTICA DEL SISTEMA ---
+    # Captura la hora exacta del momento y lugar donde se registra
+    fecha_registro = datetime.now().isoformat()
     
     mecs = [p['name'] for p in providers if p['type'] == "Mecánico"]
     coms = [p['name'] for p in providers if p['type'] == "Comercio"]
     
-    # --- PASO 1: CÁMARA FUERA DEL FORMULARIO ---
-    # Esto asegura que la foto se guarde en la sesión apenas se toma
-    st.write("📸 **Captura de Evidencia (Obligatoria)**")
-    foto_captura = st.camera_input("Tome la foto de la factura o trabajo", key="camera_workshop_final")
+    # --- 📸 CÁMARA FUERA DEL FORMULARIO (OPCIONAL) ---
+    st.write("📸 **Foto del trabajo o factura (Opcional)**")
+    # Al estar fuera del form, se procesa en tiempo real y no bloquea el guardado
+    foto_archivo = st.camera_input("Capturar evidencia", key="workshop_camera_v5")
+    
+    if not foto_archivo:
+        st.info("💡 Nota: Puedes subir la foto o continuar solo con los datos si el celular tiene problemas.")
 
-    # --- PASO 2: EL FORMULARIO DE DATOS ---
-    with st.form("workshop_data_form", clear_on_submit=True):
-        tp = st.radio("Tipo de Mantenimiento", ["Preventivo", "Correctivo"], horizontal=True)
+    # --- 📝 FORMULARIO DE DATOS ---
+    with st.form("workshop_form_data"):
+        tp = st.radio("Tipo", ["Preventivo", "Correctivo"], horizontal=True)
         
         c1, c2 = st.columns(2)
         cat = c1.selectbox("Categoría", ["Aceite Motor", "Caja", "Corona", "Frenos", "Llantas", "Suspensión", "Eléctrico", "Otro"])
-        obs = st.text_area("Detalle del trabajo realizado")
+        obs = st.text_area("Detalle")
         
         ka = c1.number_input("KM Actual", min_value=0)
-        kn = c2.number_input("Próximo Mantenimiento (KM)", min_value=ka) if tp == "Preventivo" else 0
+        kn = c2.number_input("Próximo", min_value=ka) if tp == "Preventivo" else 0
         
         st.divider()
-        col_a, col_b = st.columns(2)
-        mn = col_a.selectbox("Mecánico", ["N/A"] + mecs)
-        mc = col_a.number_input("Costo Mano Obra $", min_value=0.0)
-        mp = col_a.number_input("Abono Inicial MO $", min_value=0.0, max_value=mc)
+        col_m, col_r = st.columns(2)
         
-        rn = col_b.selectbox("Comercio / Repuestos", ["N/A"] + coms)
-        rc = col_b.number_input("Costo Repuestos $", min_value=0.0)
-        rp = col_b.number_input("Abono Inicial Rep $", min_value=0.0, max_value=rc)
+        # Mecánico
+        mn = col_m.selectbox("Mecánico", ["N/A"] + mecs)
+        mc = col_m.number_input("Mano Obra $", min_value=0.0)
+        mp = col_m.number_input("Abono MO $", min_value=0.0) 
+        
+        # Repuestos
+        rn = col_r.selectbox("Comercio", ["N/A"] + coms)
+        rc = col_r.number_input("Repuestos $", min_value=0.0)
+        rp = col_r.number_input("Abono Rep $", min_value=0.0)
         
         # Botón de envío
-        submit = st.form_submit_button("💾 GUARDAR REGISTRO", type="primary", use_container_width=True)
+        enviar = st.form_submit_button("💾 GUARDAR REGISTRO", type="primary", use_container_width=True)
         
-        if submit:
-            # Ahora la validación de foto_captura funcionará correctamente
-            if not foto_captura:
-                st.error("❌ ERROR: Debe tomar la foto arriba antes de presionar Guardar.")
-            elif ka <= 0:
+        if enviar:
+            # VALIDACIÓN: Solo el kilometraje sigue siendo estrictamente obligatorio
+            if ka <= 0:
                 st.error("❌ ERROR: El kilometraje debe ser mayor a 0.")
             else:
-                # Procesar imagen a Base64 para guardarla
-                import base64
-                img_bytes = foto_captura.getvalue()
-                foto_b64 = base64.b64encode(img_bytes).decode()
+                # --- PROCESAR FOTO SOLO SI EXISTE ---
+                base64_photo = ""
+                if foto_archivo:
+                    import base64
+                    bytes_data = foto_archivo.getvalue()
+                    base64_photo = base64.b64encode(bytes_data).decode()
                 
-                datos = {
+                # --- GUARDAR EN FIREBASE ---
+                REFS["data"].collection("logs").add({
                     "fleetId": user['fleet'],
                     "bus": user['bus'],
-                    "date": datetime.now().isoformat(),
+                    "date": fecha_registro, # <--- Hora automática
                     "category": cat,
                     "observations": obs,
                     "km_current": ka,
                     "km_next": kn,
-                    "mec_name": mn, "mec_cost": mc, "mec_paid": mp,
-                    "com_name": rn, "com_cost": rc, "com_paid": rp,
-                    "photo_b64": foto_b64, # Guardamos la imagen real
-                    "has_photo": True
-                }
+                    "mec_name": mn,
+                    "mec_cost": mc,
+                    "mec_paid": mp,
+                    "com_name": rn,
+                    "com_cost": rc,
+                    "com_paid": rp,
+                    "photo_b64": base64_photo # Si no hay foto, se guarda vacío
+                })
                 
-                REFS["data"].collection("logs").add(datos)
                 st.cache_data.clear()
-                st.success("✅ ¡Guardado con éxito!")
+                st.success("✅ ¡Registro guardado con éxito!")
                 time.sleep(1)
                 st.rerun()
 
