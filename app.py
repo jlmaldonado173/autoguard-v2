@@ -332,7 +332,8 @@ def render_radar(df, user):
     if df.empty or 'bus' not in df.columns: 
         st.info("⏳ Sin datos actuales."); return
 
-    buses = sorted(df['bus'].unique()) if user['role'] == 'owner' else [user['bus']]
+   # Tanto el dueño como el mecánico pueden ver todas las unidades
+    buses = sorted(df['bus'].unique()) if user['role'] in ['owner', 'mechanic'] else [user['bus']]
     
     if user['role'] == 'driver':
         bus = user['bus']
@@ -918,13 +919,19 @@ def render_directory(providers, user):
                             st.cache_data.clear()
                             st.success("Actualizado"); time.sleep(0.5); st.rerun()
 
-def render_mechanic_work(user, bus_id, providers):
+def render_mechanic_work(user, df, providers):
+    st.header("🛠️ Registrar Trabajo Mecánico")
+    
+    # El mecánico ve todas las unidades de la empresa y elige a cuál reparar
+    buses_disponibles = sorted(df['bus'].unique()) if not df.empty else ["Sin Unidades"]
+    bus_id = st.selectbox("🚛 Seleccionar Unidad a Reparar", buses_disponibles)
+    
     st.info(f"Registrando trabajo para la Unidad: **{bus_id}**")
     
     coms = [p['name'] for p in providers if p['type'] == "Comercio"]
     
     with st.form("mechanic_log"):
-        cat = st.selectbox("Categoría del Daño", ["Mecánica", "Eléctrica", "Frenos", "Suspensión", "Motor"])
+        cat = st.selectbox("Categoría del Daño", ["Mecánica", "Eléctrica", "Frenos", "Suspensión", "Motor", "Llantas", "Otro"])
         obs = st.text_area("Informe Técnico", placeholder="Describa el daño encontrado y la solución...")
         
         c1, c2 = st.columns(2)
@@ -935,7 +942,7 @@ def render_mechanic_work(user, bus_id, providers):
         store_name = st.selectbox("Comprado en:", ["N/A"] + coms)
         rep_cost = st.number_input("Costo de Repuestos $", min_value=0.0)
         
-        foto = st.camera_input("Capturar evidencia del trabajo")
+        foto = st.camera_input("Capturar evidencia del trabajo", key=f"mech_cam_{bus_id}")
         
         if st.form_submit_button("ENVIAR REPORTE Y CARGAR A CONTABILIDAD", type="primary"):
             if not foto or not obs:
@@ -964,7 +971,6 @@ def render_mechanic_work(user, bus_id, providers):
                 st.success("✅ Reporte enviado. El dueño ya puede ver los costos en Contabilidad.")
                 time.sleep(1)
                 st.rerun()
-
 def main():
     if 'user' not in st.session_state:
         ui_render_login()
@@ -1008,18 +1014,15 @@ def main():
             choice = st.sidebar.radio("Más opciones:", list(menu.keys()))
             menu[choice]()
 
+        # 2. ROL MECÁNICO
         elif u['role'] == 'mechanic':
             st.subheader(f"🛠️ Centro de Servicio: {u['name']}")
             
-            buses_disponibles = sorted(df['bus'].unique()) if not df.empty else ["Sin Unidades"]
-            bus_sel = st.sidebar.selectbox("Unidad a Reparar", buses_disponibles)
-            
-            df_bus = df[df['bus'] == bus_sel] if not df.empty else df
-
+            # El menú ahora usa el DataFrame completo (df) para ver toda la flota
             menu = {
-                "🏠 Estado del Bus e IA": lambda: render_radar(df_bus, u),
-                "📝 Registrar Trabajo": lambda: render_mechanic_work(u, bus_sel, provs),
-                "📊 Historial Técnico": lambda: render_reports(df_bus),
+                "🏠 Radar de Taller": lambda: render_radar(df, u),
+                "📝 Registrar Trabajo": lambda: render_mechanic_work(u, df, provs),
+                "📊 Historial Técnico Completo": lambda: render_reports(df),
                 "🏢 Directorio": lambda: render_directory(provs, u)
             }
             
