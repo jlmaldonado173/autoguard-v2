@@ -162,7 +162,10 @@ def ui_render_login():
             col1, col2 = st.columns(2)
             f_in = col1.text_input("Código de Flota").upper().strip()
             u_in = col2.text_input("Usuario").upper().strip()
-            r_in = st.selectbox("Perfil", ["Conductor", "Administrador/Dueño"])
+            
+            # --- MEJORA: Ampliamos la opción para abarcar a todo el personal ---
+            r_in = st.selectbox("Perfil", ["Personal (Conductor/Mecánico)", "Administrador/Dueño"])
+            
             pass_in = st.text_input("Contraseña", type="password") if "Adm" in r_in else ""
             
             if st.button("INGRESAR", type="primary"):
@@ -180,6 +183,53 @@ def ui_render_login():
         if st.text_input("Master Key", type="password") == APP_CONFIG["MASTER_KEY"]:
             render_super_admin()
 
+def handle_login(f_in, u_in, r_in, pass_in):
+    if not REFS: st.error("Offline"); return
+    doc = REFS["fleets"].document(f_in).get()
+    
+    if not doc.exists: 
+        st.error("❌ Código de flota no registrado.")
+        return
+        
+    data = doc.to_dict()
+    
+    # Bloque de suspensión
+    if data.get('status') == 'suspended':
+        sup_snap = REFS["data"].get()
+        contacto_maestro = "jlmaldonado173@gmail.com o 0964014007"
+        contacto = sup_snap.to_dict().get("support_contact", contacto_maestro) if sup_snap.exists else contacto_maestro
+        
+        st.warning(f"""
+            ### ℹ️ Aviso de Cuenta
+            Estimado usuario, su acceso a **Itero AI** se encuentra temporalmente inactivo. 
+            Para reactivar sus servicios, le invitamos cordialmente a ponerse en contacto con nuestra administración:
+            📧 **{contacto}**
+        """)
+        return
+
+    access = False; role = ""; assigned_bus = "0"
+    
+    if "Adm" in r_in:
+        if data.get('password') == pass_in: 
+            access = True; role = 'owner'
+        else: 
+            st.error("🔒 Contraseña incorrecta.")
+    else:
+        # --- CORRECCIÓN: Lógica dinámica de roles ---
+        auth = REFS["fleets"].document(f_in).collection("authorized_users").document(u_in).get()
+        
+        if auth.exists and auth.to_dict().get('active', True): 
+            user_data = auth.to_dict()
+            access = True
+            # Leemos el rol real de Firebase. Si por error no tiene, asume conductor por defecto
+            role = user_data.get('role', 'driver') 
+            assigned_bus = user_data.get('bus', '0')
+        else: 
+            st.error("❌ Usuario no autorizado. Verifique que el nombre esté escrito exactamente igual.")
+
+    if access:
+        st.session_state.user = {'role': role, 'fleet': f_in, 'name': u_in, 'bus': assigned_bus}
+        st.rerun()
 def handle_login(f_in, u_in, r_in, pass_in):
     if not REFS: st.error("Offline"); return
     doc = REFS["fleets"].document(f_in).get()
