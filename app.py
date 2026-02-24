@@ -642,12 +642,17 @@ def render_workshop(user, providers):
     mecs = [p['name'] for p in providers if p['type'] == "Mecánico"]
     coms = [p['name'] for p in providers if p['type'] == "Comercio"]
     
-    with st.form("workshop_form"):
+    # --- 1. CÁMARA FUERA DEL FORMULARIO (PARA EVITAR ERRORES) ---
+    st.write("📸 **Evidencia Fotográfica (Obligatoria)**")
+    # Usamos una key única para asegurar que se limpie correctamente
+    foto_captura = st.camera_input("Tome una foto del trabajo o factura", key="cam_workshop")
+    
+    if not foto_captura:
+        st.info("👆 Por favor, tome la foto primero para habilitar el formulario de registro.")
+
+    # --- 2. EL FORMULARIO SOLO PARA DATOS ---
+    with st.form("workshop_form", clear_on_submit=True):
         tp = st.radio("Tipo de Mantenimiento", ["Preventivo", "Correctivo"], horizontal=True)
-        
-        # --- SECCIÓN DE FOTO OBLIGATORIA ---
-        st.write("📸 **Evidencia Fotográfica (Obligatoria)**")
-        foto_captura = st.camera_input("Tome una foto del trabajo o factura")
         
         c1, c2 = st.columns(2)
         cat = c1.selectbox("Categoría", ["Aceite Motor", "Caja", "Corona", "Frenos", "Llantas", "Suspensión", "Eléctrico", "Otro"])
@@ -657,8 +662,6 @@ def render_workshop(user, providers):
         kn = c2.number_input("Próximo Mantenimiento (KM)", min_value=ka) if tp == "Preventivo" else 0
         
         st.divider()
-        
-        # Costos y Proveedores
         col_a, col_b = st.columns(2)
         mn = col_a.selectbox("Mecánico", ["N/A"] + mecs)
         mc = col_a.number_input("Costo Mano Obra $", min_value=0.0)
@@ -668,13 +671,20 @@ def render_workshop(user, providers):
         rc = col_b.number_input("Costo Repuestos $", min_value=0.0)
         rp = col_b.number_input("Abono Inicial Rep $", min_value=0.0, max_value=rc)
         
-        if st.form_submit_button("💾 GUARDAR REGISTRO", type="primary", use_container_width=True):
-            # VALIDACIÓN DE CÁMARA
+        submit = st.form_submit_button("💾 GUARDAR REGISTRO", type="primary", use_container_width=True)
+        
+        if submit:
+            # VALIDACIÓN DOBLE
             if not foto_captura:
-                st.error("❌ ERROR: Es obligatorio tomar una foto para registrar el ingreso al taller.")
+                st.error("❌ ERROR CRÍTICO: No se detectó la foto. Debe tomarla antes de guardar.")
             elif ka <= 0:
                 st.error("❌ ERROR: Debe ingresar el kilometraje actual.")
             else:
+                # --- PROCESAR FOTO A BASE64 ---
+                import base64
+                bytes_data = foto_captura.getvalue()
+                foto_b64 = base64.b64encode(bytes_data).decode()
+                
                 # Proceso de guardado
                 datos_registro = {
                     "fleetId": user['fleet'],
@@ -690,16 +700,17 @@ def render_workshop(user, providers):
                     "com_name": rn,
                     "com_cost": rc,
                     "com_paid": rp,
-                    "has_photo": True  # Marcador de que hay evidencia
+                    "photo_b64": foto_b64, # Guardamos la foto real
+                    "has_photo": True
                 }
                 
                 REFS["data"].collection("logs").add(datos_registro)
                 
-                # Limpiar cache y refrescar
                 st.cache_data.clear()
-                st.success("✅ Registro guardado exitosamente")
+                st.success("✅ Registro guardado exitosamente con foto.")
                 time.sleep(1)
                 st.rerun()
+
 def render_fuel():
     u = st.session_state.user; st.header("⛽ Combustible")
     with st.form("f"):
