@@ -855,58 +855,77 @@ def render_directory(providers, user):
         st.info("Aún no tienes proveedores registrados.")
         return
 
-    for p in providers:
-        p_id = p.get('id')
-        with st.container(border=True):
-            col_info, col_wa = st.columns([2, 1])
+    # --- MEJORA: Separar la lista lógicamente ---
+    mecanicos = [p for p in providers if p['type'] in ["Mecánico", "Electricista"]]
+    comercios = [p for p in providers if p['type'] not in ["Mecánico", "Electricista"]]
+
+    t1, t2 = st.tabs(["👨‍🔧 Mecánicos y Especialistas", "🛒 Comercios y Repuestos"])
+
+    # Función interna para no repetir el código de las tarjetas
+    def mostrar_lista(lista):
+        if not lista:
+            st.info("No hay registros en esta categoría.")
+            return
             
-            col_info.markdown(f"**{p['name']}**")
-            col_info.caption(f"🔧 {p['type']} | 📞 {p.get('phone', 'S/N')}")
-            
-            if p.get('phone'):
-                ph = "".join(filter(str.isdigit, p['phone']))
-                if ph.startswith('0'): ph = '593' + ph[1:] 
+        for p in lista:
+            p_id = p.get('id')
+            with st.container(border=True):
+                col_info, col_wa = st.columns([2, 1])
                 
-                link = f"https://wa.me/{ph}?text=Hola%20{p['name']}"
-                col_wa.markdown(
-                    f'<a href="{link}" target="_blank" style="text-decoration:none;">'
-                    f'<div style="background-color:#25D366; color:white; padding:8px; border-radius:10px; text-align:center; font-weight:bold;">'
-                    f'📲 CHAT</div></a>', 
-                    unsafe_allow_html=True
-                )
-
-            if user['role'] == 'owner':
-                st.divider()
-                c_edit, c_del = st.columns(2)
+                col_info.markdown(f"**{p['name']}**")
+                col_info.caption(f"🔧 {p['type']} | 📞 {p.get('phone', 'S/N')}")
                 
-                edit_mode = c_edit.checkbox("✏️ Editar", key=f"ed_check_{p_id}")
-                
-                if c_del.button("🗑️ Eliminar", key=f"del_btn_{p_id}", use_container_width=True):
-                    REFS["data"].collection("providers").document(p_id).delete()
-                    st.cache_data.clear()
-                    st.toast(f"Eliminado: {p['name']}")
-                    time.sleep(0.5)
-                    st.rerun()
+                if p.get('phone'):
+                    ph = "".join(filter(str.isdigit, p['phone']))
+                    if ph.startswith('0'): ph = '593' + ph[1:] 
+                    
+                    link = f"https://wa.me/{ph}?text=Hola%20{p['name']}"
+                    col_wa.markdown(
+                        f'<a href="{link}" target="_blank" style="text-decoration:none;">'
+                        f'<div style="background-color:#25D366; color:white; padding:8px; border-radius:10px; text-align:center; font-weight:bold;">'
+                        f'📲 CHAT</div></a>', 
+                        unsafe_allow_html=True
+                    )
 
-                if edit_mode:
-                    with st.form(f"f_ed_{p_id}"):
-                        new_n = st.text_input("Nombre", value=p['name']).upper()
-                        new_p = st.text_input("WhatsApp", value=p.get('phone',''))
-                        
-                        tipos = ["Mecánico", "Comercio", "Llantas", "Frenos", "Electricista", "Otro"]
-                        idx = tipos.index(p['type']) if p['type'] in tipos else 0
-                        
-                        new_t = st.selectbox("Tipo", tipos, index=idx)
-                        
-                        if st.form_submit_button("💾 Guardar Cambios"):
-                            REFS["data"].collection("providers").document(p_id).update({
-                                "name": new_n, 
-                                "phone": new_p, 
-                                "type": new_t
-                            })
-                            st.cache_data.clear()
-                            st.success("Actualizado"); time.sleep(0.5); st.rerun()
+                if user['role'] == 'owner':
+                    st.divider()
+                    c_edit, c_del = st.columns(2)
+                    
+                    edit_mode = c_edit.checkbox("✏️ Editar", key=f"ed_check_{p_id}")
+                    
+                    if c_del.button("🗑️ Eliminar", key=f"del_btn_{p_id}", use_container_width=True):
+                        REFS["data"].collection("providers").document(p_id).delete()
+                        st.cache_data.clear()
+                        st.toast(f"Eliminado: {p['name']}")
+                        time.sleep(0.5)
+                        st.rerun()
 
+                    if edit_mode:
+                        with st.form(f"f_ed_{p_id}"):
+                            new_n = st.text_input("Nombre", value=p['name']).upper()
+                            new_p = st.text_input("WhatsApp", value=p.get('phone',''))
+                            
+                            tipos = ["Mecánico", "Comercio", "Llantas", "Frenos", "Electricista", "Otro"]
+                            idx = tipos.index(p['type']) if p['type'] in tipos else 0
+                            
+                            new_t = st.selectbox("Tipo", tipos, index=idx)
+                            
+                            if st.form_submit_button("💾 Guardar Cambios"):
+                                REFS["data"].collection("providers").document(p_id).update({
+                                    "name": new_n, 
+                                    "phone": new_p, 
+                                    "type": new_t
+                                })
+                                st.cache_data.clear()
+                                st.success("Actualizado"); time.sleep(0.5); st.rerun()
+
+    # Mostrar el contenido en cada pestaña
+    with t1:
+        mostrar_lista(mecanicos)
+        
+    with t2:
+        mostrar_lista(comercios)
+        
 def render_mechanic_work(user, df, providers):
     st.header("🛠️ Registrar Trabajo Mecánico")
     
