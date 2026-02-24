@@ -391,7 +391,7 @@ def render_reports(df):
         c1.plotly_chart(px.pie(df, values='total_cost', names='category', title='Gastos por Categoría'), use_container_width=True)
         c2.plotly_chart(px.bar(df, x='bus', y='total_cost', title='Gastos por Unidad'), use_container_width=True)
 
-   with t2:
+    with t2:
         # 1. Obtener el KM máximo real de cada bus
         max_km = df.groupby('bus')['km_current'].max()
         
@@ -421,6 +421,7 @@ def render_reports(df):
             st.dataframe(df_status[['bus', 'Estado', 'Item']], use_container_width=True, hide_index=True)
         else:
             st.success("No hay mantenimientos preventivos programados.")
+
     with t3:
         st.subheader("📜 Bitácora de Movimientos")
         df_sorted = df.sort_values('date', ascending=False)
@@ -448,7 +449,6 @@ def render_reports(df):
                             st.error("Error al cargar imagen")
                     else:
                         st.info("🚫 Sin foto")
-
 def render_accounting(df, user, phone_map):
     st.header("💰 Contabilidad y Abonos")
     
