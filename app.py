@@ -138,7 +138,8 @@ def fetch_fleet_data(fleet_id: str, role: str, bus_id: str, start_d: date, end_d
         query = base_query.where("date", ">=", dt_start.isoformat()).where("date", "<=", dt_end.isoformat())
         logs = [l.to_dict() | {"id": l.id} for l in query.stream()]
 
-        cols_config = {'bus': '0', 'category': '', 'observations': '', 'km_current': 0, 'km_next': 0, 'mec_cost': 0, 'com_cost': 0, 'mec_paid': 0, 'com_paid': 0, 'gallons': 0}
+        # --- MEJORA: Añadimos 'status' y 'driver_feedback' a las columnas permitidas ---
+        cols_config = {'bus': '0', 'category': '', 'observations': '', 'km_current': 0, 'km_next': 0, 'mec_cost': 0, 'com_cost': 0, 'mec_paid': 0, 'com_paid': 0, 'gallons': 0, 'status': 'completed', 'driver_feedback': ''}
         
         if not logs: return provs, pd.DataFrame(columns=list(cols_config.keys()) + ['date'])
         
@@ -163,7 +164,6 @@ def ui_render_login():
             f_in = col1.text_input("Código de Flota").upper().strip()
             u_in = col2.text_input("Usuario").upper().strip()
             
-            # --- Perfiles separados ---
             r_in = st.selectbox("Perfil", ["Conductor", "Mecánico", "Administrador/Dueño"])
             
             pass_in = st.text_input("Contraseña", type="password") if "Adm" in r_in else ""
@@ -183,7 +183,6 @@ def ui_render_login():
         if st.text_input("Master Key", type="password") == APP_CONFIG["MASTER_KEY"]:
             render_super_admin()
 
-# --- FUNCIÓN DE LOGIN ÚNICA Y DEFINITIVA ---
 def handle_login(f_in, u_in, r_in, pass_in):
     if not REFS: st.error("Offline"); return
     doc = REFS["fleets"].document(f_in).get()
@@ -222,7 +221,6 @@ def handle_login(f_in, u_in, r_in, pass_in):
             db_role = user_data.get('role', 'driver')
             assigned_bus = user_data.get('bus', '0')
             
-            # Validación estricta
             if "Mec" in r_in:
                 if db_role == 'mechanic':
                     access = True; role = 'mechanic'
@@ -350,6 +348,44 @@ def render_radar(df, user):
             else:
                 st.warning("⚠️ Botón de WhatsApp desactivado: El administrador aún no ha configurado su número de teléfono en la sección 'Gestión'.")
         
+        # --- NUEVO: SISTEMA DE CONFIRMACIÓN DEL CONDUCTOR ---
+        st.write("---")
+        pending_jobs = bus_df[bus_df['status'] == 'pending_driver']
+        
+        if not pending_jobs.empty:
+            for _, r in pending_jobs.iterrows():
+                # Calcula los días transcurridos
+                dias_transcurridos = (pd.Timestamp.now() - r['date']).days
+                
+                if dias_transcurridos <= 3:
+                    st.warning(f"🔔 **¡Atención!** Tienes una reparación pendiente de confirmar: **{r['category']}** (Hecha hace {dias_transcurridos} días por {r.get('mec_name', 'Taller')})")
+                    with st.expander("✅ Confirmar si el arreglo quedó bien", expanded=True):
+                        with st.form(f"conf_form_{r['id']}"):
+                            st.write(f"**Reporte Técnico:** {r.get('observations', '')}")
+                            calificacion = st.radio("¿El bus quedó en buenas condiciones?", ["👍 Sí, quedó perfecto", "👎 No, el problema sigue"])
+                            obs_cond = st.text_area("Añade una observación (Obligatorio si falló)", placeholder="Ej: Los frenos siguen sonando...")
+                            
+                            if st.form_submit_button("Enviar Confirmación al Dueño", type="primary"):
+                                if "No" in calificacion and not obs_cond:
+                                    st.error("Debes escribir una observación detallando por qué no quedó bien.")
+                                else:
+                                    nuevo_estado = "confirmed_ok" if "Sí" in calificacion else "confirmed_bad"
+                                    REFS["data"].collection("logs").document(r['id']).update({
+                                        "status": nuevo_estado,
+                                        "driver_feedback": f"[{calificacion}] {obs_cond}"
+                                    })
+                                    st.cache_data.clear()
+                                    st.success("Confirmación enviada. ¡Gracias!")
+                                    time.sleep(1)
+                                    st.rerun()
+                else:
+                    # Si pasaron más de 3 días, la caduca automáticamente para no estorbar la pantalla
+                    REFS["data"].collection("logs").document(r['id']).update({
+                        "status": "expired_auto_ok",
+                        "driver_feedback": "El conductor no confirmó en el plazo de 3 días."
+                    })
+        # ----------------------------------------------------
+
         st.write("### 📜 Mi Historial")
         st.dataframe(bus_df[['date', 'category', 'observations', 'km_current']].sort_values('date', ascending=False).head(10).assign(date=lambda x: x['date'].dt.strftime('%Y-%m-%d')), use_container_width=True, hide_index=True)
         return
@@ -445,6 +481,16 @@ def render_reports(df):
                         st.caption(f"👨‍🔧 Mecánico: {r['mec_name']} (${r['mec_cost']})")
                     if r.get('com_name') and r['com_name'] != "N/A":
                         st.caption(f"🛒 Comercio: {r['com_name']} (${r['com_cost']})")
+                    
+                    # --- MEJORA: Mostrar la opinión del conductor en la bitácora ---
+                    if r.get('driver_feedback'):
+                        color_fb = "#28a745" if "ok" in str(r.get('status', '')) else "#FF4B4B" if "bad" in str(r.get('status', '')) else "#6c757d"
+                        st.markdown(f"""
+                            <div style='background-color:#f8f9fa; padding:10px; border-radius:5px; border-left: 5px solid {color_fb}; margin-top:10px;'>
+                                🗣️ <b>Feedback del Conductor:</b> {r['driver_feedback']}
+                            </div>
+                        """, unsafe_allow_html=True)
+                    # ---------------------------------------------------------------
                 
                 with col_img:
                     if "photo_b64" in r and r["photo_b64"]:
@@ -592,7 +638,8 @@ def render_workshop(user, providers):
                     "com_name": rn,
                     "com_cost": rc,
                     "com_paid": rp,
-                    "photo_b64": base64_photo
+                    "photo_b64": base64_photo,
+                    "status": "completed"
                 })
                 
                 st.cache_data.clear()
@@ -863,15 +910,13 @@ def render_directory(providers, user):
 def render_mechanic_work(user, df, providers):
     st.header("🛠️ Registrar Trabajo Mecánico")
     
-    # 1. Traemos los buses que ya tienen historial
     buses_activos = set(df['bus'].unique()) if 'bus' in df.columns and not df.empty else set()
     
-    # 2. Sumamos TODOS los buses que tienen los conductores asignados actualmente
     try:
         usuarios = REFS["fleets"].document(user['fleet']).collection("authorized_users").stream()
         for us in usuarios:
             b = us.to_dict().get('bus', '0')
-            if b != '0' and b:  # Ignoramos el 0 de los mecánicos
+            if b != '0' and b: 
                 buses_activos.add(b)
     except Exception:
         pass
@@ -904,6 +949,7 @@ def render_mechanic_work(user, df, providers):
                 bytes_data = foto.getvalue()
                 b64 = base64.b64encode(bytes_data).decode()
                 
+                # --- MEJORA: El trabajo se guarda con estado "Pendiente de Confirmación" ---
                 REFS["data"].collection("logs").add({
                     "fleetId": user['fleet'],
                     "bus": bus_id,
@@ -917,11 +963,13 @@ def render_mechanic_work(user, df, providers):
                     "com_name": store_name,
                     "com_cost": rep_cost,
                     "com_paid": 0, 
-                    "photo_b64": b64
+                    "photo_b64": b64,
+                    "status": "pending_driver",
+                    "driver_feedback": ""
                 })
                 
                 st.cache_data.clear()
-                st.success("✅ Reporte enviado. El dueño ya puede ver los costos en Contabilidad.")
+                st.success("✅ Reporte enviado. El conductor recibirá la alerta para confirmar.")
                 time.sleep(1)
                 st.rerun()
 
