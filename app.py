@@ -418,13 +418,50 @@ def render_radar(df, user):
                         st.info(get_ai_analysis(bus_df, bus, user['fleet']))
 
 def render_ai_training(user):
-    st.header("🧠 Entrenar IA Itero")
-    st.write("Configura tus reglas (Ej: Aceite cada 10k km, alerta si el gasto supera $500).")
+    st.header("🧠 Entrenar Inteligencia Artificial")
+    st.info("Escribe aquí las reglas personalizadas para tu flota (Ej: 'Alerta si el cambio de aceite supera los 10,000km' o 'El Bus 05 siempre gasta más diesel').")
+
+    # 1. Recuperar las reglas actuales de la base de datos para que aparezcan al abrir
     doc_ref = REFS["fleets"].document(user['fleet'])
-    rules = doc_ref.get().to_dict().get("ai_rules", "") if doc_ref.get().exists else ""
-    new_rules = st.text_area("Instrucciones de la Flota:", value=rules, height=200)
-    if st.button("💾 Guardar y Entrenar IA"):
-        doc_ref.set({"ai_rules": new_rules}, merge=True); st.success("IA Actualizada"); st.rerun()
+    doc = doc_ref.get()
+    
+    current_rules = ""
+    if doc.exists:
+        current_rules = doc.to_dict().get("ai_rules", "")
+
+    # 2. Formulario de edición
+    with st.form("ai_training_form"):
+        # El text_area muestra lo que ya está guardado (current_rules)
+        new_rules = st.text_area(
+            "Reglas y Parámetros de la Flota:", 
+            value=current_rules, 
+            height=300,
+            help="Estas reglas guiarán el diagnóstico de la IA cuando presiones el botón de 'Analizar' en el Radar."
+        )
+        
+        submit_btn = st.form_submit_button("💾 GUARDAR Y ACTUALIZAR IA", type="primary")
+
+        if submit_btn:
+            try:
+                # 3. Guardar en Firebase con merge=True para no borrar otros datos (como la clave)
+                doc_ref.set({"ai_rules": new_rules}, merge=True)
+                
+                # 4. MENSAJE DE ÉXITO VISUAL
+                st.success("✅ ¡Reglas guardadas! La IA ahora usará estas instrucciones para analizar tu flota.")
+                st.balloons() # Efecto visual de éxito
+                
+                # Limpiamos cache para que la IA use las nuevas reglas de inmediato
+                st.cache_data.clear()
+                time.sleep(2)
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ Error al guardar: {e}")
+
+    # Mostrar un resumen de lo que la IA sabe actualmente
+    if current_rules:
+        st.caption("✨ Actualmente la IA está entrenada con tus reglas personalizadas.")
+    else:
+        st.warning("⚠️ La IA está usando parámetros genéricos. Escribe tus reglas arriba para personalizarla.")
 
 def render_reports(df):
     st.header("📊 Reportes y Auditoría")
