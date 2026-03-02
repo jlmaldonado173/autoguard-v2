@@ -292,7 +292,6 @@ def render_super_admin():
 
 # --- 5. VISTAS PRINCIPALES ---
 def render_radar(df, user):
-def render_radar(df, user):
     st.subheader("📡 Radar de Flota")
     if df.empty or 'bus' not in df.columns: 
         st.info("⏳ Sin datos actuales."); return
