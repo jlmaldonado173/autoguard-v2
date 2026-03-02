@@ -361,61 +361,54 @@ def render_radar(df, user):
                     st.warning(f"🔔 **¡Atención!** Tienes una reparación pendiente de confirmar: **{r['category']}** (Hecha hace {dias_transcurridos} días por {r.get('mec_name', 'Taller')})")
                     with st.expander("✅ Confirmar si el arreglo quedó bien", expanded=True):
                         with st.form(f"conf_form_{r['id']}"):
-                            st.write(f"**Reporte Técnico:** {r.get('observations', '')}")
-                            calificacion = st.radio("¿El bus quedó en buenas condiciones?", ["👍 Sí, quedó perfecto", "👎 No, el problema sigue"])
-                            obs_cond = st.text_area("Añade una observación (Obligatorio si falló)", placeholder="Ej: Los frenos siguen sonando...")
-                            
-                            if st.form_submit_button("Enviar Confirmación al Dueño", type="primary"):
-                                if "No" in calificacion and not obs_cond:
-                                    st.error("Debes escribir una observación detallando por qué no quedó bien.")
-                                else:
-                                    nuevo_estado = "confirmed_ok" if "Sí" in calificacion else "confirmed_bad"
-                                    REFS["data"].collection("logs").document(r['id']).update({
-                                        "status": nuevo_estado,
-                                        "driver_feedback": f"[{calificacion}] {obs_cond}"
-                                    })
-                                    st.cache_data.clear()
-                                    st.success("Confirmación enviada. ¡Gracias!")
-                                    time.sleep(1)
-                                    st.rerun()
-                else:
-                    # Si pasaron más de 3 días, la caduca automáticamente para no estorbar la pantalla
-                    REFS["data"].collection("logs").document(r['id']).update({
-                        "status": "expired_auto_ok",
-                        "driver_feedback": "El conductor no confirmó en el plazo de 3 días."
-                    })
-        # ----------------------------------------------------
+# --- CODIGO CORREGIDO PARA EL RADAR ---
 
-        st.write("### 📜 Mi Historial")
-        st.dataframe(bus_df[['date', 'category', 'observations', 'km_current']].sort_values('date', ascending=False).head(10).assign(date=lambda x: x['date'].dt.strftime('%Y-%m-%d')), use_container_width=True, hide_index=True)
+def render_radar_card(bus_id, df_bus):
+    if df_bus.empty:
         return
+    
+    # Obtenemos el registro más reciente
+    latest = df_bus.sort_values('date', ascending=False).iloc[0]
+    km_actual = latest['km_current']
+    
+    # Buscamos el último registro de "Aceite Motor" para saber cuándo toca el siguiente
+    oil_records = df_bus[df_bus['category'] == "Aceite Motor"].sort_values('date', ascending=False)
+    
+    km_proximo_aceite = 0
+    if not oil_records.empty:
+        km_proximo_aceite = oil_records.iloc[0].get('km_next', 0)
 
-    for bus in buses:
-        bus_df = df[df['bus'] == bus]
-        if bus_df.empty: continue
-        
-        current_km = bus_df['km_current'].max()
-        latest_by_cat = bus_df.sort_values('date', ascending=False).drop_duplicates(subset=['category'])
-        pending = latest_by_cat[latest_by_cat['km_next'] > 0].copy()
-        
-        color_icon = "🟢"
-        if not pending.empty:
-            pending['diff'] = pending['km_next'] - current_km
-            worst_diff = pending['diff'].min()
-            if worst_diff < 0: color_icon = "🔴"
-            elif worst_diff <= 500: color_icon = "🟡"
+    # Lógica de Alerta (Solo si faltan 500km o menos)
+    faltan_para_cambio = km_proximo_aceite - km_actual
+    es_alerta = 0 < faltan_para_cambio <= 500
+    es_vencido = km_actual >= km_proximo_aceite and km_proximo_aceite > 0
 
-        with st.expander(f"{color_icon} BUS {bus} | KM Real: {current_km:,.0f}"):
-            c1, c2 = st.columns([2,1])
-            with c1:
-                st.markdown('<div class="metric-box">', unsafe_allow_html=True)
-                st.dataframe(bus_df[['date', 'category', 'km_current', 'mec_cost']].sort_values('date', ascending=False).head(3).assign(date=lambda x: x['date'].dt.strftime('%Y-%m-%d')), use_container_width=True, hide_index=True)
-                st.markdown('</div>', unsafe_allow_html=True)
-            
-            with c2:
-                if st.button(f"🤖 Diagnóstico IA", key=f"ai_own_{bus}", type="primary", use_container_width=True):
-                    with st.spinner("IA Analizando..."):
-                        st.info(get_ai_analysis(bus_df, bus, user['fleet']))
+    # Color de la tarjeta según el estado
+    bg_color = "linear-gradient(135deg, #ff9a9e 0%, #fecfef 99%, #fecfef 100%)" if es_vencido else \
+               "linear-gradient(135deg, #f6d365 0%, #fda085 100%)" if es_alerta else \
+               "linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%)"
+
+    # Renderizado de la tarjeta en pantalla
+    st.markdown(f"""
+        <div style="background: {bg_color}; padding: 25px; border-radius: 20px; color: #1e1e1e; box-shadow: 0 10px 20px rgba(0,0,0,0.1);">
+            <h1 style="margin:0; font-size: 40px;">BUS {bus_id}</h1>
+            <p style="font-size: 20px; font-weight: bold; margin-bottom: 10px;">
+                {'⚠️ CAMBIO VENCIDO' if es_vencido else '⚠️ PRÓXIMO CAMBIO' if es_alerta else '✅ UNIDAD OPERATIVA'}
+            </p>
+            <hr style="border: 0.5px solid rgba(0,0,0,0.1)">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <small>KM ACTUAL</small>
+                    <h2 style="margin:0;">{km_actual:,.0f}</h2>
+                </div>
+                <div style="text-align: right;">
+                    <small>PRÓXIMO ACEITE</small>
+                    <h2 style="margin:0;">{km_proximo_aceite:,.0f}</h2>
+                </div>
+            </div>
+            {f'<p style="margin-top:10px; font-weight:bold;">¡Faltan {faltan_para_cambio:,.0f} KM!</p>' if es_alerta else ''}
+        </div>
+    """, unsafe_allow_html=True)
 
 def render_ai_training(user):
     st.header("🧠 Entrenar Inteligencia Artificial")
