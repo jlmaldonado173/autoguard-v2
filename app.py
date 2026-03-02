@@ -355,53 +355,69 @@ def render_radar(df, user):
                 link = f"https://wa.me/{format_phone(APP_CONFIG['BOSS_PHONE'])}?text={urllib.parse.quote(wa_msg)}"
                 st.markdown(f'<a href="{link}" target="_blank" class="btn-whatsapp">📲 NOTIFICAR AL JEFE</a>', unsafe_allow_html=True)
 
+def render_radar(df, user):
+    st.subheader("📡 Radar de Flota")
+    if df.empty or 'bus' not in df.columns: 
+        st.info("⏳ Sin datos actuales."); return
 
-def render_radar_card(bus_id, df_bus):
-    if df_bus.empty:
-        return
+    buses = sorted(df['bus'].unique()) if user['role'] == 'owner' else [user['bus']]
     
-    # Obtenemos el registro más reciente
-    latest = df_bus.sort_values('date', ascending=False).iloc[0]
-    km_actual = latest['km_current']
-    
-    # Buscamos el último registro de "Aceite Motor" para saber cuándo toca el siguiente
-    oil_records = df_bus[df_bus['category'] == "Aceite Motor"].sort_values('date', ascending=False)
-    
-    km_proximo_aceite = 0
-    if not oil_records.empty:
-        km_proximo_aceite = oil_records.iloc[0].get('km_next', 0)
+    for bus in buses:
+        bus_df = df[df['bus'] == bus].sort_values('date', ascending=False)
+        if bus_df.empty: continue
+        
+        # 1. Obtener KM Actual
+        latest = bus_df.iloc[0]
+        km_actual = latest['km_current']
+        
+        # 2. Obtener KM del Próximo Cambio de Aceite
+        oil_records = bus_df[bus_df['category'] == "Aceite Motor"].sort_values('date', ascending=False)
+        km_proximo_aceite = oil_records.iloc[0].get('km_next', 0) if not oil_records.empty else 0
 
-    # Lógica de Alerta (Solo si faltan 500km o menos)
-    faltan_para_cambio = km_proximo_aceite - km_actual
-    es_alerta = 0 < faltan_para_cambio <= 500
-    es_vencido = km_actual >= km_proximo_aceite and km_proximo_aceite > 0
+        # 3. Lógica de Alerta (Solo si faltan 500 KM o menos)
+        faltan_para_cambio = km_proximo_aceite - km_actual
+        es_alerta = 0 < faltan_para_cambio <= 500
+        es_vencido = km_actual >= km_proximo_aceite and km_proximo_aceite > 0
 
-    # Color de la tarjeta según el estado
-    bg_color = "linear-gradient(135deg, #ff9a9e 0%, #fecfef 99%, #fecfef 100%)" if es_vencido else \
-               "linear-gradient(135deg, #f6d365 0%, #fda085 100%)" if es_alerta else \
-               "linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%)"
+        # 4. Definir Color de Tarjeta
+        if es_vencido:
+            bg_color = "linear-gradient(135deg, #FF4B4B 0%, #8B0000 100%)" # Rojo
+            msg = "🚨 VENCIDO: Aceite Motor"
+        elif es_alerta:
+            bg_color = "linear-gradient(135deg, #ffc107 0%, #e67e22 100%)" # Naranja
+            msg = "⚠️ PRÓXIMO: Aceite Motor"
+        else:
+            bg_color = "linear-gradient(135deg, #28a745 0%, #1e7e34 100%)" # Verde
+            msg = "✅ UNIDAD OPERATIVA"
 
-    # Renderizado de la tarjeta en pantalla
-    st.markdown(f"""
-        <div style="background: {bg_color}; padding: 25px; border-radius: 20px; color: #1e1e1e; box-shadow: 0 10px 20px rgba(0,0,0,0.1);">
-            <h1 style="margin:0; font-size: 40px;">BUS {bus_id}</h1>
-            <p style="font-size: 20px; font-weight: bold; margin-bottom: 10px;">
-                {'⚠️ CAMBIO VENCIDO' if es_vencido else '⚠️ PRÓXIMO CAMBIO' if es_alerta else '✅ UNIDAD OPERATIVA'}
-            </p>
-            <hr style="border: 0.5px solid rgba(0,0,0,0.1)">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <small>KM ACTUAL</small>
-                    <h2 style="margin:0;">{km_actual:,.0f}</h2>
-                </div>
-                <div style="text-align: right;">
-                    <small>PRÓXIMO ACEITE</small>
-                    <h2 style="margin:0;">{km_proximo_aceite:,.0f}</h2>
+        # 5. Renderizado Visual (Tarjeta)
+        st.markdown(f"""
+            <div style="background:{bg_color}; padding:25px; border-radius:15px; color:white; margin-bottom:10px;">
+                <h2 style="margin:0;">BUS {bus}</h2>
+                <p style="margin:0; font-weight:bold;">{msg}</p>
+                <div style="display:flex; justify-content:space-between; margin-top:15px; background:rgba(255,255,255,0.1); padding:10px; border-radius:10px;">
+                    <div style="text-align:center;">
+                        <small>ACTUAL</small><br>
+                        <b style="font-size:20px;">{km_actual:,.0f}</b>
+                    </div>
+                    <div style="text-align:center;">
+                        <small>PRÓXIMO</small><br>
+                        <b style="font-size:20px;">{km_proximo_aceite:,.0f}</b>
+                    </div>
                 </div>
             </div>
-            {f'<p style="margin-top:10px; font-weight:bold;">¡Faltan {faltan_para_cambio:,.0f} KM!</p>' if es_alerta else ''}
-        </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
+
+        # Botón de IA y Notificación
+        if user['role'] == 'owner':
+            if st.button(f"🤖 Diagnóstico IA {bus}", key=f"ai_{bus}"):
+                st.info(get_ai_analysis(bus_df, bus, user['fleet']))
+        else:
+            if es_alerta or es_vencido:
+                wa_msg = f"Jefe, el Bus {bus} está {msg}. Actual: {km_actual} / Próximo: {km_proximo_aceite}"
+                link = f"https://wa.me/{format_phone(APP_CONFIG['BOSS_PHONE'])}?text={urllib.parse.quote(wa_msg)}"
+                st.markdown(f'<a href="{link}" target="_blank" class="btn-whatsapp">📲 NOTIFICAR AL JEFE</a>', unsafe_allow_html=True)
+
 
 def render_ai_training(user):
     st.header("🧠 Entrenar Inteligencia Artificial")
