@@ -292,76 +292,69 @@ def render_super_admin():
 
 # --- 5. VISTAS PRINCIPALES ---
 def render_radar(df, user):
+def render_radar(df, user):
     st.subheader("📡 Radar de Flota")
     if df.empty or 'bus' not in df.columns: 
         st.info("⏳ Sin datos actuales."); return
 
-    buses = sorted(df['bus'].unique()) if user['role'] in ['owner', 'mechanic'] else [user['bus']]
+    buses = sorted(df['bus'].unique()) if user['role'] == 'owner' else [user['bus']]
     
-    if user['role'] == 'driver':
-        bus = user['bus']
-        bus_df = df[df['bus'] == bus]
-        if bus_df.empty: st.warning("Sin historial."); return
+    for bus in buses:
+        bus_df = df[df['bus'] == bus].sort_values('date', ascending=False)
+        if bus_df.empty: continue
         
-        current_km = bus_df['km_current'].max()
-        latest_by_cat = bus_df.sort_values('date', ascending=False).drop_duplicates(subset=['category'])
-        pending = latest_by_cat[latest_by_cat['km_next'] > 0].copy()
+        # 1. Obtener KM Actual
+        latest = bus_df.iloc[0]
+        km_actual = latest['km_current']
         
-        color = "#28a745"; msg = "✅ UNIDAD OPERATIVA"; wa = ""
-        
-        if not pending.empty:
-            pending['diff'] = pending['km_next'] - current_km
-            worst_case = pending.loc[pending['diff'].idxmin()]
-            diff = worst_case['diff']
-            
-            if diff < 0: 
-                color = "linear-gradient(135deg, #FF4B4B 0%, #8B0000 100%)"
-                msg = f"🚨 VENCIDO: {worst_case['category']}"
-                wa = f"Jefe, mi unidad {bus} tiene vencido {worst_case['category']}."
-            elif diff <= 500: 
-                color = "linear-gradient(135deg, #ffc107 0%, #e67e22 100%)"
-                msg = f"⚠️ PRÓXIMO: {worst_case['category']}"
-                wa = f"Jefe, al Bus {bus} le toca {worst_case['category']} pronto."
+        # 2. Obtener KM del Próximo Cambio de Aceite
+        oil_records = bus_df[bus_df['category'] == "Aceite Motor"].sort_values('date', ascending=False)
+        km_proximo_aceite = oil_records.iloc[0].get('km_next', 0) if not oil_records.empty else 0
 
+        # 3. Lógica de Alerta (Solo si faltan 500 KM o menos)
+        faltan_para_cambio = km_proximo_aceite - km_actual
+        es_alerta = 0 < faltan_para_cambio <= 500
+        es_vencido = km_actual >= km_proximo_aceite and km_proximo_aceite > 0
+
+        # 4. Definir Color de Tarjeta
+        if es_vencido:
+            bg_color = "linear-gradient(135deg, #FF4B4B 0%, #8B0000 100%)" # Rojo
+            msg = "🚨 VENCIDO: Aceite Motor"
+        elif es_alerta:
+            bg_color = "linear-gradient(135deg, #ffc107 0%, #e67e22 100%)" # Naranja
+            msg = "⚠️ PRÓXIMO: Aceite Motor"
+        else:
+            bg_color = "linear-gradient(135deg, #28a745 0%, #1e7e34 100%)" # Verde
+            msg = "✅ UNIDAD OPERATIVA"
+
+        # 5. Renderizado Visual (Tarjeta)
         st.markdown(f"""
-            <div class="driver-card" style="background:{color}; border:none; padding:30px; border-radius:15px; color:white;">
-                <h1 style="margin:0; font-size:45px; letter-spacing:-1px;">BUS {bus}</h1>
-                <h3 style="opacity:0.9; font-weight:400;">{msg}</h3>
-                <div style="background:rgba(255,255,255,0.2); display:inline-block; padding:10px 30px; border-radius:50px; margin-top:15px;">
-                    <span style="font-size:40px; font-weight:900;">{current_km:,.0f} KM</span>
+            <div style="background:{bg_color}; padding:25px; border-radius:15px; color:white; margin-bottom:10px;">
+                <h2 style="margin:0;">BUS {bus}</h2>
+                <p style="margin:0; font-weight:bold;">{msg}</p>
+                <div style="display:flex; justify-content:space-between; margin-top:15px; background:rgba(255,255,255,0.1); padding:10px; border-radius:10px;">
+                    <div style="text-align:center;">
+                        <small>ACTUAL</small><br>
+                        <b style="font-size:20px;">{km_actual:,.0f}</b>
+                    </div>
+                    <div style="text-align:center;">
+                        <small>PRÓXIMO</small><br>
+                        <b style="font-size:20px;">{km_proximo_aceite:,.0f}</b>
+                    </div>
                 </div>
             </div>
         """, unsafe_allow_html=True)
 
-        st.write("")
-        if st.button(f"🤖 Consultar Diagnóstico IA (Bus {bus})", key=f"ai_drv_{bus}", type="primary", use_container_width=True):
-            with st.spinner("IA Analizando tu unidad..."):
+        # Botón de IA y Notificación
+        if user['role'] == 'owner':
+            if st.button(f"🤖 Diagnóstico IA {bus}", key=f"ai_{bus}"):
                 st.info(get_ai_analysis(bus_df, bus, user['fleet']))
+        else:
+            if es_alerta or es_vencido:
+                wa_msg = f"Jefe, el Bus {bus} está {msg}. Actual: {km_actual} / Próximo: {km_proximo_aceite}"
+                link = f"https://wa.me/{format_phone(APP_CONFIG['BOSS_PHONE'])}?text={urllib.parse.quote(wa_msg)}"
+                st.markdown(f'<a href="{link}" target="_blank" class="btn-whatsapp">📲 NOTIFICAR AL JEFE</a>', unsafe_allow_html=True)
 
-        if wa:
-            fleet_doc = REFS["fleets"].document(user['fleet']).get()
-            boss_phone = fleet_doc.to_dict().get("boss_phone", "") if fleet_doc.exists else ""
-            
-            if boss_phone:
-                link = f"https://wa.me/{format_phone(boss_phone)}?text={urllib.parse.quote(wa)}"
-                st.markdown(f'<a href="{link}" target="_blank" class="btn-whatsapp" style="text-decoration:none;">📲 NOTIFICAR AL JEFE</a>', unsafe_allow_html=True)
-            else:
-                st.warning("⚠️ Botón de WhatsApp desactivado: El administrador aún no ha configurado su número de teléfono en la sección 'Gestión'.")
-        
-        # --- NUEVO: SISTEMA DE CONFIRMACIÓN DEL CONDUCTOR ---
-        st.write("---")
-        pending_jobs = bus_df[bus_df['status'] == 'pending_driver']
-        
-        if not pending_jobs.empty:
-            for _, r in pending_jobs.iterrows():
-                # Calcula los días transcurridos
-                dias_transcurridos = (pd.Timestamp.now() - r['date']).days
-                
-                if dias_transcurridos <= 3:
-                    st.warning(f"🔔 **¡Atención!** Tienes una reparación pendiente de confirmar: **{r['category']}** (Hecha hace {dias_transcurridos} días por {r.get('mec_name', 'Taller')})")
-                    with st.expander("✅ Confirmar si el arreglo quedó bien", expanded=True):
-                        with st.form(f"conf_form_{r['id']}"):
-# --- CODIGO CORREGIDO PARA EL RADAR ---
 
 def render_radar_card(bus_id, df_bus):
     if df_bus.empty:
