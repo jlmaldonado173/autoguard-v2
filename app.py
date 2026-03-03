@@ -400,22 +400,62 @@ def render_ai_training(user):
     else:
         st.warning("⚠️ La IA está usando parámetros genéricos. Escribe tus reglas arriba para personalizarla.")
 def display_top_notifications(user):
-    """Muestra una alerta en la parte superior si el usuario tiene mensajes sin leer"""
+    """Muestra alertas en la parte superior y permite edición rápida al Administrador"""
     if not REFS: return
-    # Busca notificaciones dirigidas al rol actual (ej. owner, driver, mechanic)
-    notifs = REFS["data"].collection("notifications").where("fleetId", "==", user['fleet']).where("target_role", "==", user['role']).where("status", "==", "unread").stream()
     
+    # Busca notificaciones no leídas para el rol actual
+    notifs = REFS["data"].collection("notifications").where("fleetId", "==", user['fleet']).where("target_role", "==", user['role']).where("status", "==", "unread").stream()
     lista_notifs = [{"id": n.id, **n.to_dict()} for n in notifs]
     
     if lista_notifs:
-        st.error(f"🔔 TIENES {len(lista_notifs)} NOTIFICACIÓN(ES) NUEVA(S)")
+        st.error(f"🔔 TIENES {len(lista_notifs)} NOTIFICACIÓN(ES) NUEVA(S) QUE REQUIEREN TU ATENCIÓN")
+        
         for n in lista_notifs:
             with st.container(border=True):
                 st.write(f"📩 **De:** {n.get('sender')} | 📅 {n.get('date', '')[:10]}")
-                st.info(f"💬 {n.get('message', '')}")
-                if st.button("✅ Marcar como leído", key=f"read_{n['id']}"):
+                st.info(f"💬 **Mensaje:** {n.get('message', '')}")
+                
+                # --- EDICIÓN RÁPIDA (SOLO PARA EL ADMINISTRADOR) ---
+                if 'log_id' in n and user['role'] == 'owner':
+                    # Buscamos el reporte original en la base de datos
+                    log_ref = REFS["data"].collection("logs").document(n['log_id'])
+                    log_doc = log_ref.get()
+                    
+                    if log_doc.exists:
+                        log_data = log_doc.to_dict()
+                        
+                        # Creamos un desplegable para editar ahí mismo
+                        with st.expander("✏️ Corregir este registro aquí mismo"):
+                            with st.form(f"quick_edit_{n['id']}"):
+                                st.write(f"**Actualizando:** Bus {log_data.get('bus')} | Categoría: {log_data.get('category')}")
+                                
+                                new_ka = st.number_input("KM Actual (Corregido)", value=int(log_data.get('km_current', 0)), step=1)
+                                new_kn = st.number_input("Próximo Cambio (KM Meta)", value=int(log_data.get('km_next', 0)), step=1)
+                                new_obs = st.text_area("Detalle (Puedes agregar 'Corregido por Admin')", value=log_data.get('observations', ''))
+                                
+                                # Botón que guarda y limpia la notificación al mismo tiempo
+                                if st.form_submit_button("💾 Guardar Cambios y Marcar como Leído", type="primary"):
+                                    # 1. Actualizamos el reporte
+                                    log_ref.update({
+                                        "km_current": new_ka,
+                                        "km_next": new_kn,
+                                        "observations": new_obs
+                                    })
+                                    # 2. Marcamos la notificación como leída
+                                    REFS["data"].collection("notifications").document(n['id']).update({"status": "read"})
+                                    
+                                    st.cache_data.clear()
+                                    st.success("✅ Registro corregido exitosamente.")
+                                    time.sleep(1.5)
+                                    st.rerun()
+                    else:
+                        st.warning("⚠️ El registro original ya fue eliminado o no existe.")
+
+                # Botón normal de "Marcar como leído" por si no quiere editar nada
+                if st.button("✅ Simplemente marcar como leído", key=f"read_{n['id']}"):
                     REFS["data"].collection("notifications").document(n['id']).update({"status": "read"})
                     st.rerun()
+                    
         st.divider()
 
 def render_communications(user):
@@ -573,6 +613,7 @@ def render_reports(df, user):
                                     "sender": f"{user['name']} ({user['role'].upper()})",
                                     "target_role": "owner",
                                     "message": f"🚩 SOLICITUD DE CORRECCIÓN (Bus {r['bus']} | {r['category']}): {explicacion}",
+                                    "log_id": r['id'], # <--- SE ENVÍA EL ID PARA QUE EL DUEÑO PUEDA EDITARLO DIRECTO
                                     "date": datetime.now().isoformat(),
                                     "status": "unread"
                                 })
