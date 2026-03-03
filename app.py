@@ -354,70 +354,6 @@ def render_radar(df, user):
                 link = f"https://wa.me/{format_phone(APP_CONFIG['BOSS_PHONE'])}?text={urllib.parse.quote(wa_msg)}"
                 st.markdown(f'<a href="{link}" target="_blank" class="btn-whatsapp">📲 NOTIFICAR AL JEFE</a>', unsafe_allow_html=True)
 
-def render_radar(df, user):
-    st.subheader("📡 Radar de Flota")
-    if df.empty or 'bus' not in df.columns: 
-        st.info("⏳ Sin datos actuales."); return
-
-    buses = sorted(df['bus'].unique()) if user['role'] == 'owner' else [user['bus']]
-    
-    for bus in buses:
-        bus_df = df[df['bus'] == bus].sort_values('date', ascending=False)
-        if bus_df.empty: continue
-        
-        # 1. Obtener KM Actual
-        latest = bus_df.iloc[0]
-        km_actual = latest['km_current']
-        
-        # 2. Obtener KM del Próximo Cambio de Aceite
-        oil_records = bus_df[bus_df['category'] == "Aceite Motor"].sort_values('date', ascending=False)
-        km_proximo_aceite = oil_records.iloc[0].get('km_next', 0) if not oil_records.empty else 0
-
-        # 3. Lógica de Alerta (Solo si faltan 500 KM o menos)
-        faltan_para_cambio = km_proximo_aceite - km_actual
-        es_alerta = 0 < faltan_para_cambio <= 500
-        es_vencido = km_actual >= km_proximo_aceite and km_proximo_aceite > 0
-
-        # 4. Definir Color de Tarjeta
-        if es_vencido:
-            bg_color = "linear-gradient(135deg, #FF4B4B 0%, #8B0000 100%)" # Rojo
-            msg = "🚨 VENCIDO: Aceite Motor"
-        elif es_alerta:
-            bg_color = "linear-gradient(135deg, #ffc107 0%, #e67e22 100%)" # Naranja
-            msg = "⚠️ PRÓXIMO: Aceite Motor"
-        else:
-            bg_color = "linear-gradient(135deg, #28a745 0%, #1e7e34 100%)" # Verde
-            msg = "✅ UNIDAD OPERATIVA"
-
-        # 5. Renderizado Visual (Tarjeta)
-        st.markdown(f"""
-            <div style="background:{bg_color}; padding:25px; border-radius:15px; color:white; margin-bottom:10px;">
-                <h2 style="margin:0;">BUS {bus}</h2>
-                <p style="margin:0; font-weight:bold;">{msg}</p>
-                <div style="display:flex; justify-content:space-between; margin-top:15px; background:rgba(255,255,255,0.1); padding:10px; border-radius:10px;">
-                    <div style="text-align:center;">
-                        <small>ACTUAL</small><br>
-                        <b style="font-size:20px;">{km_actual:,.0f}</b>
-                    </div>
-                    <div style="text-align:center;">
-                        <small>PRÓXIMO</small><br>
-                        <b style="font-size:20px;">{km_proximo_aceite:,.0f}</b>
-                    </div>
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
-
-        # Botón de IA y Notificación
-        if user['role'] == 'owner':
-            if st.button(f"🤖 Diagnóstico IA {bus}", key=f"ai_{bus}"):
-                st.info(get_ai_analysis(bus_df, bus, user['fleet']))
-        else:
-            if es_alerta or es_vencido:
-                wa_msg = f"Jefe, el Bus {bus} está {msg}. Actual: {km_actual} / Próximo: {km_proximo_aceite}"
-                link = f"https://wa.me/{format_phone(APP_CONFIG['BOSS_PHONE'])}?text={urllib.parse.quote(wa_msg)}"
-                st.markdown(f'<a href="{link}" target="_blank" class="btn-whatsapp">📲 NOTIFICAR AL JEFE</a>', unsafe_allow_html=True)
-
-
 def render_ai_training(user):
     st.header("🧠 Entrenar Inteligencia Artificial")
     st.info("Escribe aquí las reglas personalizadas para tu flota (Ej: 'Alerta si el cambio de aceite supera los 10,000km' o 'El Bus 05 siempre gasta más diesel').")
@@ -479,29 +415,44 @@ def render_reports(df):
         c2.plotly_chart(px.bar(df, x='bus', y='total_cost', title='Gastos por Unidad'), use_container_width=True)
 
     with t2:
-        max_km = df.groupby('bus')['km_current'].max()
-        latest_cat = df.sort_values('date', ascending=False).drop_duplicates(subset=['bus', 'category'])
-        view = latest_cat[latest_cat['km_next'] > 0].copy()
+        st.subheader("🚦 Estado de Mantenimientos Programados")
         
-        data = []
-        for _, r in view.iterrows():
-            current_bus_km = max_km.get(r['bus'], 0)
-            diff = r['km_next'] - current_bus_km
+        # 1. Obtener el Kilometraje MÁS ALTO y reciente de cada bus (el real de hoy)
+        km_reales = df.groupby('bus')['km_current'].max()
+        
+        # 2. Buscar solo los últimos registros donde se programó un "Próximo Cambio" (km_next > 0)
+        mantenimientos = df[df['km_next'] > 0].sort_values('date', ascending=False).drop_duplicates(subset=['bus', 'category'])
+        
+        datos_estado = []
+        for _, r in mantenimientos.iterrows():
+            bus = r['bus']
             
-            if diff < 0:
-                est = "🔴 VENCIDO"
-            elif diff <= 500:
-                est = "🟡 PRÓXIMO"
+            # 3. Lógica correcta: Comparamos el KM Máximo actual vs la Meta programada
+            km_actual_real = km_reales.get(bus, r['km_current'])
+            km_meta = r['km_next']
+            faltan = km_meta - km_actual_real
+            
+            # 4. Clasificación exacta (Aviso a los 500 km)
+            if faltan < 0:
+                estado = "🔴 VENCIDO"
+            elif faltan <= 500:
+                estado = f"🟡 PRÓXIMO ({faltan:,.0f} km)"
             else:
-                est = "🟢 OK"
+                estado = f"🟢 OK (faltan {faltan:,.0f} km)"
                 
-            data.append({"bus": r['bus'], "Estado": est, "Item": r['category'], "diff": diff})
+            datos_estado.append({
+                "Bus": bus,
+                "Categoría": r['category'],
+                "Estado": estado,
+                "KM Actual (Real)": km_actual_real,
+                "Meta (Próximo)": km_meta
+            })
             
-        if data:
-            df_status = pd.DataFrame(data).sort_values(by=['diff', 'bus'])
-            st.dataframe(df_status[['bus', 'Estado', 'Item']], use_container_width=True, hide_index=True)
+        if datos_estado:
+            # Mostramos la tabla organizada
+            st.dataframe(pd.DataFrame(datos_estado).sort_values(['Bus', 'Categoría']), use_container_width=True, hide_index=True)
         else:
-            st.success("No hay mantenimientos preventivos programados.")
+            st.info("No hay mantenimientos programados con kilometraje a futuro.")
 
     with t3:
         st.subheader("📜 Bitácora de Movimientos")
@@ -514,28 +465,19 @@ def render_reports(df):
                 
                 with col_txt:
                     st.write(f"**Detalle:** {r.get('observations', 'Sin detalle')}")
-                    st.write(f"**KM:** {r['km_current']:,.0f}")
-                    if r.get('mec_name') and r['mec_name'] != "N/A":
-                        st.caption(f"👨‍🔧 Mecánico: {r['mec_name']} (${r['mec_cost']})")
-                    if r.get('com_name') and r['com_name'] != "N/A":
-                        st.caption(f"🛒 Comercio: {r['com_name']} (${r['com_cost']})")
+                    st.write(f"**KM Reportado ese día:** {r['km_current']:,.0f}")
+                    if r.get('km_next', 0) > 0:
+                        st.write(f"**Próximo Programado:** {r['km_next']:,.0f}")
                     
-                    # --- MEJORA: Mostrar la opinión del conductor en la bitácora ---
-                    if r.get('driver_feedback'):
-                        color_fb = "#28a745" if "ok" in str(r.get('status', '')) else "#FF4B4B" if "bad" in str(r.get('status', '')) else "#6c757d"
-                        st.markdown(f"""
-                            <div style='background-color:#f8f9fa; padding:10px; border-radius:5px; border-left: 5px solid {color_fb}; margin-top:10px;'>
-                                🗣️ <b>Feedback del Conductor:</b> {r['driver_feedback']}
-                            </div>
-                        """, unsafe_allow_html=True)
-                    # ---------------------------------------------------------------
+                    if r.get('mec_name') and r['mec_name'] != "N/A":
+                        st.caption(f"👨‍🔧 Mecánico: {r['mec_name']} (${r.get('mec_cost', 0)})")
+                    if r.get('com_name') and r['com_name'] != "N/A":
+                        st.caption(f"🛒 Comercio: {r['com_name']} (${r.get('com_cost', 0)})")
                 
                 with col_img:
                     if "photo_b64" in r and r["photo_b64"]:
                         try:
-                            st.image(f"data:image/jpeg;base64,{r['photo_b64']}", 
-                                     caption="Evidencia capturada", 
-                                     use_container_width=True)
+                            st.image(f"data:image/jpeg;base64,{r['photo_b64']}", use_container_width=True)
                         except:
                             st.error("Error al cargar imagen")
                     else:
