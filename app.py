@@ -1024,6 +1024,8 @@ def main():
         phone_map = {p['name']: p.get('phone', '') for p in provs}
 
         # --- LÓGICA POR ROLES ---
+        
+        # 1. ROL CONDUCTOR
         if u['role'] == 'driver':
             st.subheader("⛽ Carga de Combustible")
             with st.form("fuel_driver_main"):
@@ -1038,12 +1040,16 @@ def main():
                             "category": "Combustible", "km_current": k, "gallons": g, "com_cost": c, "com_paid": c
                         })
                         st.cache_data.clear()
-                        st.success("Registrado con éxito"); time.sleep(1); st.rerun()
+                        st.success("Registrado con éxito")
+                        time.sleep(1)
+                        st.rerun()
             st.divider()
+            
+            # ---> MENÚ CONDUCTOR (Comas corregidas) <---
             menu = {
                 "🏠 Radar de Unidad": lambda: render_radar(df, u),
                 "💰 Pagos y Abonos": lambda: render_accounting(df, u, phone_map),
-                "📊 Reportes": lambda: render_reports(df, u)
+                "📊 Reportes": lambda: render_reports(df, u), # <--- Aquí faltaba la coma en tu código original
                 "🛠️ Reportar Taller": lambda: render_workshop(u, provs),
                 "🏢 Directorio": lambda: render_directory(provs, u)
             }
@@ -1054,23 +1060,25 @@ def main():
         elif u['role'] == 'mechanic':
             st.subheader(f"🛠️ Centro de Servicio: {u['name']}")
             
+            # ---> MENÚ MECÁNICO (Corregida la 'u' en reportes) <---
             menu = {
                 "🏠 Radar de Taller": lambda: render_radar(df, u),
                 "📝 Registrar Trabajo": lambda: render_mechanic_work(u, df, provs),
-                "📊 Historial Técnico Completo": lambda: render_reports(df),
+                "📊 Historial Técnico Completo": lambda: render_reports(df, u), # <--- Añadida la ", u"
                 "🏢 Directorio": lambda: render_directory(provs, u)
             }
-            
             choice = st.sidebar.radio("Menú Mecánico:", list(menu.keys()))
             menu[choice]()
 
-    # 3. ROL DUEÑO (Un solo bloque else)
+        # 3. ROL DUEÑO
         else:
             render_radar(df, u)
             st.divider()
+            
+            # ---> MENÚ DUEÑO (Limpiado de llaves y código duplicado) <---
             menu = {
                 "⛽ Combustible": lambda: render_fuel(), 
-                "📊 Reportes": lambda: render_reports(df, u),  # <--- AQUÍ AÑADÍ LA ", u"
+                "📊 Reportes": lambda: render_reports(df, u), 
                 "🛠️ Taller": lambda: render_workshop(u, provs),
                 "💰 Contabilidad": lambda: render_accounting(df, u, phone_map),
                 "🏢 Directorio": lambda: render_directory(provs, u),
@@ -1080,10 +1088,8 @@ def main():
             }
             choice = st.sidebar.radio("Ir a:", list(menu.keys()))
             menu[choice]()
-            }
-            choice = st.sidebar.radio("Ir a:", list(menu.keys()))
-            menu[choice]()
         
+        # --- BOTÓN DE SALIDA UNIFICADO ---
         st.sidebar.divider()
         if st.sidebar.button("Cerrar Sesión", use_container_width=True): 
             st.session_state.clear()
