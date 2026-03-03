@@ -292,67 +292,116 @@ def render_super_admin():
 
 # --- 5. VISTAS PRINCIPALES ---
 def render_radar(df, user):
-    st.subheader("📡 Radar de Flota")
-    if df.empty or 'bus' not in df.columns: 
-        st.info("⏳ Sin datos actuales."); return
+    st.header("🏠 Radar de la Unidad (Escáner 360°)")
+    if df.empty:
+        st.info("No hay datos registrados en el historial para mostrar el radar.")
+        return
 
-    buses = sorted(df['bus'].unique()) if user['role'] == 'owner' else [user['bus']]
+    # 1. Selector Inteligente: El dueño/mecánico elige el bus, el chofer ve el suyo
+    if user['role'] in ['owner', 'mechanic']:
+        buses_disponibles = sorted(df['bus'].unique())
+        if not buses_disponibles:
+            st.warning("No hay buses registrados aún.")
+            return
+        bus_sel = st.selectbox("🎯 Selecciona la Unidad a Escanear:", buses_disponibles)
+    else:
+        bus_sel = user['bus']
+        st.subheader(f"🎯 Unidad Asignada: {bus_sel}")
+
+    # Filtramos todo el historial solo para el bus seleccionado
+    df_bus = df[df['bus'] == bus_sel]
+    if df_bus.empty:
+        st.warning(f"Sin historial de mantenimientos para el bus {bus_sel}.")
+        return
+
+    # 2. Obtener el Kilometraje REAL ACTUAL (El máximo reportado en cualquier registro de este bus)
+    km_actual_real = df_bus['km_current'].max()
     
-    for bus in buses:
-        bus_df = df[df['bus'] == bus].sort_values('date', ascending=False)
-        if bus_df.empty: continue
+    st.markdown(f"""
+        <div style='background-color:#1E1E1E; padding:15px; border-radius:10px; text-align:center; border: 1px solid #4CAF50;'>
+            <h2 style='color:#4CAF50; margin:0;'>🚗 KILOMETRAJE ACTUAL: {km_actual_real:,.0f} km</h2>
+        </div>
+        <br>
+    """, unsafe_allow_html=True)
+
+    st.subheader("🛠️ Próximos Mantenimientos (Orden de Urgencia)")
+    
+    # 3. Lógica de Escáner Total: Buscamos la última meta de CADA categoría
+    df_metas = df_bus[df_bus['km_next'] > 0].sort_values('date', ascending=False)
+    ultimas_metas = df_metas.drop_duplicates(subset=['category'])
+    
+    if ultimas_metas.empty:
+        st.success("No hay mantenimientos futuros programados en el radar para esta unidad.")
+        return
         
-        # 1. Obtener KM Actual
-        latest = bus_df.iloc[0]
-        km_actual = latest['km_current']
+    alertas = []
+    for _, r in ultimas_metas.iterrows():
+        cat = r['category']
+        meta = r['km_next']
+        faltan = meta - km_actual_real
+        alertas.append({"cat": cat, "faltan": faltan, "meta": meta, "fecha": r['date']})
         
-        # 2. Obtener KM del Próximo Cambio de Aceite
-        oil_records = bus_df[bus_df['category'] == "Aceite Motor"].sort_values('date', ascending=False)
-        km_proximo_aceite = oil_records.iloc[0].get('km_next', 0) if not oil_records.empty else 0
+    # Ordenamos de lo más urgente (menor km faltante) a lo menos urgente
+    alertas = sorted(alertas, key=lambda x: x['faltan'])
+    
+    # 4. Mostrar el Radar Visual
+    c1, c2, c3 = st.columns(3)
+    columnas = [c1, c2, c3]
+    
+    # Esta variable recopilará el texto para enviárselo a la IA
+    datos_para_ia = f"El bus {bus_sel} tiene un kilometraje actual de {km_actual_real:,.0f} km. "
+    
+    for i, al in enumerate(alertas):
+        col = columnas[i % 3] # Distribuye las tarjetas en las 3 columnas
+        cat = al['cat']
+        faltan = al['faltan']
+        meta = al['meta']
+        
+        with col:
+            with st.container(border=True):
+                st.markdown(f"**{cat.upper()}**")
+                if faltan < 0:
+                    st.error(f"🔴 **VENCIDO**\n\nPasado por {abs(faltan):,.0f} km\n\n*(Meta: {meta:,.0f})*")
+                    datos_para_ia += f"El sistema de {cat} está VENCIDO por {abs(faltan):,.0f} km. "
+                elif faltan <= 1500: # Aviso de precaución si faltan menos de 1500km
+                    st.warning(f"🟡 **PRÓXIMO**\n\nFaltan {faltan:,.0f} km\n\n*(Meta: {meta:,.0f})*")
+                    datos_para_ia += f"El sistema de {cat} requerirá cambio pronto, faltan {faltan:,.0f} km. "
+                else:
+                    st.success(f"🟢 **ÓPTIMO**\n\nFaltan {faltan:,.0f} km\n\n*(Meta: {meta:,.0f})*")
+                    datos_para_ia += f"El sistema de {cat} está en buen estado, faltan {faltan:,.0f} km. "
 
-        # 3. Lógica de Alerta (Solo si faltan 500 KM o menos)
-        faltan_para_cambio = km_proximo_aceite - km_actual
-        es_alerta = 0 < faltan_para_cambio <= 500
-        es_vencido = km_actual >= km_proximo_aceite and km_proximo_aceite > 0
-
-        # 4. Definir Color de Tarjeta
-        if es_vencido:
-            bg_color = "linear-gradient(135deg, #FF4B4B 0%, #8B0000 100%)" # Rojo
-            msg = "🚨 VENCIDO: Aceite Motor"
-        elif es_alerta:
-            bg_color = "linear-gradient(135deg, #ffc107 0%, #e67e22 100%)" # Naranja
-            msg = "⚠️ PRÓXIMO: Aceite Motor"
-        else:
-            bg_color = "linear-gradient(135deg, #28a745 0%, #1e7e34 100%)" # Verde
-            msg = "✅ UNIDAD OPERATIVA"
-
-        # 5. Renderizado Visual (Tarjeta)
-        st.markdown(f"""
-            <div style="background:{bg_color}; padding:25px; border-radius:15px; color:white; margin-bottom:10px;">
-                <h2 style="margin:0;">BUS {bus}</h2>
-                <p style="margin:0; font-weight:bold;">{msg}</p>
-                <div style="display:flex; justify-content:space-between; margin-top:15px; background:rgba(255,255,255,0.1); padding:10px; border-radius:10px;">
-                    <div style="text-align:center;">
-                        <small>ACTUAL</small><br>
-                        <b style="font-size:20px;">{km_actual:,.0f}</b>
-                    </div>
-                    <div style="text-align:center;">
-                        <small>PRÓXIMO</small><br>
-                        <b style="font-size:20px;">{km_proximo_aceite:,.0f}</b>
-                    </div>
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
-
-        # Botón de IA y Notificación
-        if user['role'] == 'owner':
-            if st.button(f"🤖 Diagnóstico IA {bus}", key=f"ai_{bus}"):
-                st.info(get_ai_analysis(bus_df, bus, user['fleet']))
-        else:
-            if es_alerta or es_vencido:
-                wa_msg = f"Jefe, el Bus {bus} está {msg}. Actual: {km_actual} / Próximo: {km_proximo_aceite}"
-                link = f"https://wa.me/{format_phone(APP_CONFIG['BOSS_PHONE'])}?text={urllib.parse.quote(wa_msg)}"
-                st.markdown(f'<a href="{link}" target="_blank" class="btn-whatsapp">📲 NOTIFICAR AL JEFE</a>', unsafe_allow_html=True)
+    # 5. DIAGNÓSTICO INTELIGENTE (IA)
+    st.divider()
+    st.subheader("🧠 Asesor de Taller IA")
+    st.write("Haz clic para que la Inteligencia Artificial analice el radar y te dé recomendaciones estratégicas.")
+    
+    if st.button("🔍 Generar Diagnóstico con IA", type="primary", use_container_width=True):
+        with st.spinner("Analizando desgastes, cruzando datos del radar y generando diagnóstico..."):
+            try:
+                import google.generativeai as genai
+                # Configura la llave (Asegúrate de que APP_CONFIG tenga tu llave o ponla directo aquí si es necesario)
+                api_key = APP_CONFIG.get("GEMINI_API_KEY", "") 
+                if not api_key:
+                    st.error("No se encontró la llave GEMINI_API_KEY en tu APP_CONFIG.")
+                else:
+                    genai.configure(api_key=api_key)
+                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    
+                    prompt = f"""
+                    Eres el Jefe de Taller Automotriz experto de una flota de buses pesados. 
+                    Analiza los siguientes datos extraídos del escáner de la unidad: {datos_para_ia}
+                    
+                    Actúa de forma profesional, directa y resolutiva. Redacta un reporte en 3 partes cortas:
+                    1. 🚨 **Urgente:** Qué debe detenerse o revisarse hoy mismo (si hay algo vencido).
+                    2. ⚠️ **Prevención en Ruta:** A qué deben prestar atención los choferes esta semana.
+                    3. 💡 **Consejo de Experto:** Un tip mecánico específico sobre la pieza más crítica.
+                    """
+                    
+                    response = model.generate_content(prompt)
+                    st.info(response.text)
+            except Exception as e:
+                st.error("Error al conectar con la IA. Revisa tu conexión o tu API Key.")
+                st.caption(f"Detalle técnico: {e}")
 
 def render_ai_training(user):
     st.header("🧠 Entrenar Inteligencia Artificial")
