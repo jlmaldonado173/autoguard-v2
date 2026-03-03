@@ -400,7 +400,7 @@ def render_ai_training(user):
     else:
         st.warning("⚠️ La IA está usando parámetros genéricos. Escribe tus reglas arriba para personalizarla.")
 
-def render_reports(df):
+def render_reports(df, user):
     st.header("📊 Reportes y Auditoría")
     if df.empty: 
         st.warning("No hay datos.")
@@ -415,57 +415,44 @@ def render_reports(df):
         c2.plotly_chart(px.bar(df, x='bus', y='total_cost', title='Gastos por Unidad'), use_container_width=True)
 
     with t2:
-        st.subheader("🚦 Estado de Mantenimientos Programados")
-        
-        # 1. Obtener el Kilometraje MÁS ALTO y reciente de cada bus (el real de hoy)
+        st.subheader("🚦 Estado de Mantenimientos")
+        # Obtenemos el KM máximo reportado para cada bus
         km_reales = df.groupby('bus')['km_current'].max()
-        
-        # 2. Buscar solo los últimos registros donde se programó un "Próximo Cambio" (km_next > 0)
         mantenimientos = df[df['km_next'] > 0].sort_values('date', ascending=False).drop_duplicates(subset=['bus', 'category'])
         
         datos_estado = []
         for _, r in mantenimientos.iterrows():
             bus = r['bus']
-            
-            # 3. Lógica correcta: Comparamos el KM Máximo actual vs la Meta programada
             km_actual_real = km_reales.get(bus, r['km_current'])
             km_meta = r['km_next']
             faltan = km_meta - km_actual_real
             
-            # 4. Clasificación exacta (Aviso a los 500 km)
-            if faltan < 0:
-                estado = "🔴 VENCIDO"
-            elif faltan <= 500:
-                estado = f"🟡 PRÓXIMO ({faltan:,.0f} km)"
-            else:
-                estado = f"🟢 OK (faltan {faltan:,.0f} km)"
+            if faltan < 0: estado = "🔴 VENCIDO"
+            elif faltan <= 500: estado = f"🟡 PRÓXIMO ({faltan:,.0f} km)"
+            else: estado = f"🟢 OK (faltan {faltan:,.0f} km)"
                 
             datos_estado.append({
-                "Bus": bus,
-                "Categoría": r['category'],
-                "Estado": estado,
-                "KM Actual (Real)": km_actual_real,
-                "Meta (Próximo)": km_meta
+                "Bus": bus, "Categoría": r['category'], "Estado": estado,
+                "KM Actual": km_actual_real, "Próximo Cambio": km_meta
             })
             
         if datos_estado:
-            # Mostramos la tabla organizada
             st.dataframe(pd.DataFrame(datos_estado).sort_values(['Bus', 'Categoría']), use_container_width=True, hide_index=True)
         else:
             st.info("No hay mantenimientos programados con kilometraje a futuro.")
 
     with t3:
-        st.subheader("📜 Bitácora de Movimientos")
+        st.subheader("📜 Bitácora de Movimientos (EDICIÓN)")
         df_sorted = df.sort_values('date', ascending=False)
         
         for _, r in df_sorted.iterrows():
-            fecha_str = r['date'].strftime('%d/%m/%Y')
-            with st.expander(f"📅 {fecha_str} | Bus {r['bus']} | {r['category']}"):
+            fecha_str = r['date'].strftime('%d/%m/%Y %H:%M')
+            with st.expander(f"📅 {fecha_str} | Bus {r['bus']} | {r['category']} | KM: {r['km_current']:,.0f}"):
                 col_txt, col_img = st.columns([2, 1])
                 
                 with col_txt:
                     st.write(f"**Detalle:** {r.get('observations', 'Sin detalle')}")
-                    st.write(f"**KM Reportado ese día:** {r['km_current']:,.0f}")
+                    st.write(f"**KM Actual Guardado:** {r['km_current']:,.0f}")
                     if r.get('km_next', 0) > 0:
                         st.write(f"**Próximo Programado:** {r['km_next']:,.0f}")
                     
@@ -473,15 +460,48 @@ def render_reports(df):
                         st.caption(f"👨‍🔧 Mecánico: {r['mec_name']} (${r.get('mec_cost', 0)})")
                     if r.get('com_name') and r['com_name'] != "N/A":
                         st.caption(f"🛒 Comercio: {r['com_name']} (${r.get('com_cost', 0)})")
+                        
+                    st.divider()
+                    
+                    # --- LÓGICA DE EDICIÓN SEGÚN ROL ---
+                    if user['role'] == 'owner':
+                        edit_mode = st.checkbox(f"✏️ Editar / Corregir este registro", key=f"edit_check_{r['id']}")
+                        if edit_mode:
+                            with st.form(f"form_edit_{r['id']}"):
+                                st.warning("Modifica los valores y guarda.")
+                                new_ka = st.number_input("Corregir KM Actual", value=int(r['km_current']), step=1)
+                                new_kn = st.number_input("Corregir Próximo (KM Meta)", value=int(r.get('km_next', 0)), step=1)
+                                new_obs = st.text_area("Corregir Detalle", value=r.get('observations', ''))
+                                
+                                col_btn1, col_btn2 = st.columns(2)
+                                if col_btn1.form_submit_button("💾 Guardar Cambios", type="primary"):
+                                    REFS["data"].collection("logs").document(r['id']).update({
+                                        "km_current": new_ka,
+                                        "km_next": new_kn,
+                                        "observations": new_obs
+                                    })
+                                    st.cache_data.clear()
+                                    st.success("✅ Registro actualizado.")
+                                    time.sleep(1)
+                                    st.rerun()
+                                    
+                        # Botón de borrar para el dueño
+                        if st.button("🗑️ Eliminar Reporte", key=f"del_rep_{r['id']}"):
+                            REFS["data"].collection("logs").document(r['id']).delete()
+                            st.cache_data.clear()
+                            st.rerun()
+                            
+                    elif user['role'] == 'driver':
+                        wa_text = f"Hola Jefe, me equivoqué en un reporte. Por favor ayúdeme a editarlo:\n\n*Bus:* {r['bus']}\n*Fecha:* {fecha_str}\n*Categoría:* {r['category']}\n*KM Guardado:* {r['km_current']}\n\nEl kilometraje correcto debería ser: "
+                        wa_link = f"https://wa.me/{format_phone(APP_CONFIG['BOSS_PHONE'])}?text={urllib.parse.quote(wa_text)}"
+                        st.markdown(f'<a href="{wa_link}" target="_blank" class="btn-whatsapp" style="padding:10px; font-size:14px;">📲 Solicitar Corrección al Jefe</a>', unsafe_allow_html=True)
                 
                 with col_img:
                     if "photo_b64" in r and r["photo_b64"]:
                         try:
                             st.image(f"data:image/jpeg;base64,{r['photo_b64']}", use_container_width=True)
                         except:
-                            st.error("Error al cargar imagen")
-                    else:
-                        st.info("🚫 Sin foto")
+                            st.error("Error visualizando foto")
 
 def render_accounting(df, user, phone_map):
     st.header("💰 Contabilidad y Abonos")
