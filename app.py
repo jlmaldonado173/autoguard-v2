@@ -400,10 +400,9 @@ def render_ai_training(user):
     else:
         st.warning("⚠️ La IA está usando parámetros genéricos. Escribe tus reglas arriba para personalizarla.")
 def display_top_notifications(user):
-    """Muestra alertas en la parte superior y permite edición rápida al Administrador"""
+    """Muestra alertas y permite edición total al Administrador"""
     if not REFS: return
     
-    # Busca notificaciones no leídas para el rol actual
     notifs = REFS["data"].collection("notifications").where("fleetId", "==", user['fleet']).where("target_role", "==", user['role']).where("status", "==", "unread").stream()
     lista_notifs = [{"id": n.id, **n.to_dict()} for n in notifs]
     
@@ -415,43 +414,46 @@ def display_top_notifications(user):
                 st.write(f"📩 **De:** {n.get('sender')} | 📅 {n.get('date', '')[:10]}")
                 st.info(f"💬 **Mensaje:** {n.get('message', '')}")
                 
-                # --- EDICIÓN RÁPIDA (SOLO PARA EL ADMINISTRADOR) ---
+                # --- EDICIÓN TOTAL DIRECTO DESDE LA ALERTA ---
                 if 'log_id' in n and user['role'] == 'owner':
-                    # Buscamos el reporte original en la base de datos
                     log_ref = REFS["data"].collection("logs").document(n['log_id'])
                     log_doc = log_ref.get()
                     
                     if log_doc.exists:
                         log_data = log_doc.to_dict()
-                        
-                        # Creamos un desplegable para editar ahí mismo
-                        with st.expander("✏️ Corregir este registro aquí mismo"):
+                        with st.expander("✏️ Corregir TODO el registro aquí mismo"):
                             with st.form(f"quick_edit_{n['id']}"):
-                                st.write(f"**Actualizando:** Bus {log_data.get('bus')} | Categoría: {log_data.get('category')}")
+                                st.write(f"**Actualizando:** Bus {log_data.get('bus')}")
                                 
-                                new_ka = st.number_input("KM Actual (Corregido)", value=int(log_data.get('km_current', 0)), step=1)
-                                new_kn = st.number_input("Próximo Cambio (KM Meta)", value=int(log_data.get('km_next', 0)), step=1)
-                                new_obs = st.text_area("Detalle (Puedes agregar 'Corregido por Admin')", value=log_data.get('observations', ''))
+                                # Datos a modificar
+                                new_cat = st.text_input("Categoría", value=log_data.get('category', ''))
+                                new_obs = st.text_area("Detalle", value=log_data.get('observations', ''))
                                 
-                                # Botón que guarda y limpia la notificación al mismo tiempo
-                                if st.form_submit_button("💾 Guardar Cambios y Marcar como Leído", type="primary"):
-                                    # 1. Actualizamos el reporte
+                                ck1, ck2 = st.columns(2)
+                                new_ka = ck1.number_input("KM Actual", value=int(log_data.get('km_current', 0)), step=1)
+                                new_kn = ck2.number_input("Próximo Cambio", value=int(log_data.get('km_next', 0)), step=1)
+                                
+                                cm1, cm2 = st.columns(2)
+                                new_mn = cm1.text_input("Mecánico", value=log_data.get('mec_name', 'N/A'))
+                                new_mc = cm1.number_input("Costo Mano Obra $", value=float(log_data.get('mec_cost', 0.0)))
+                                new_rn = cm2.text_input("Comercio", value=log_data.get('com_name', 'N/A'))
+                                new_rc = cm2.number_input("Costo Repuestos $", value=float(log_data.get('com_cost', 0.0)))
+                                
+                                if st.form_submit_button("💾 Aplicar Corrección y Cerrar Alerta", type="primary"):
                                     log_ref.update({
-                                        "km_current": new_ka,
-                                        "km_next": new_kn,
-                                        "observations": new_obs
+                                        "category": new_cat, "observations": new_obs,
+                                        "km_current": new_ka, "km_next": new_kn,
+                                        "mec_name": new_mn, "mec_cost": new_mc,
+                                        "com_name": new_rn, "com_cost": new_rc
                                     })
-                                    # 2. Marcamos la notificación como leída
                                     REFS["data"].collection("notifications").document(n['id']).update({"status": "read"})
-                                    
                                     st.cache_data.clear()
-                                    st.success("✅ Registro corregido exitosamente.")
-                                    time.sleep(1.5)
+                                    st.success("✅ Corregido!")
+                                    time.sleep(1)
                                     st.rerun()
                     else:
-                        st.warning("⚠️ El registro original ya fue eliminado o no existe.")
+                        st.warning("⚠️ El registro original ya fue eliminado.")
 
-                # Botón normal de "Marcar como leído" por si no quiere editar nada
                 if st.button("✅ Simplemente marcar como leído", key=f"read_{n['id']}"):
                     REFS["data"].collection("notifications").document(n['id']).update({"status": "read"})
                     st.rerun()
