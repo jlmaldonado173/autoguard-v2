@@ -551,26 +551,38 @@ def render_reports(df, user):
                             st.rerun()
                             
                     elif user['role'] in ['driver', 'mechanic']:
-                        wa_text = f"Hola Administrador, me equivoqué en un reporte. Por favor ayúdeme a editarlo:\n\n*Bus:* {r['bus']}\n*Fecha:* {fecha_str}\n*Categoría:* {r['category']}\n*KM Guardado:* {r['km_current']}\n\nEl kilometraje correcto debería ser: "
-                        wa_link = f"https://wa.me/{format_phone(APP_CONFIG['BOSS_PHONE'])}?text={urllib.parse.quote(wa_text)}"
+                        st.info("💡 ¿Hay algún error en este registro?")
+                        
+                        # Caja de texto para que el usuario explique el problema
+                        explicacion = st.text_area(
+                            "Explica qué está mal y cuál es el dato correcto:", 
+                            placeholder="Ej: Me equivoqué de categoría, era Suspensión. / El kilometraje correcto es 365000.",
+                            key=f"exp_{r['id']}"
+                        )
                         
                         col_wa, col_app = st.columns(2)
                         
-                        # Botón de WhatsApp
-                        col_wa.markdown(f'<a href="{wa_link}" target="_blank" class="btn-whatsapp" style="padding:10px; font-size:14px; text-align:center; display:block;">📲 WhatsApp al Administrador</a>', unsafe_allow_html=True)
+                        # 1. Botón de Notificación Interna (App)
+                        if col_app.button("🔔 Enviar Solicitud por App", key=f"req_edit_{r['id']}", use_container_width=True):
+                            if explicacion.strip() == "":
+                                st.error("❌ Por favor, escribe tu explicación antes de enviar.")
+                            else:
+                                from datetime import datetime
+                                REFS["data"].collection("notifications").add({
+                                    "fleetId": user['fleet'],
+                                    "sender": f"{user['name']} ({user['role'].upper()})",
+                                    "target_role": "owner",
+                                    "message": f"🚩 SOLICITUD DE CORRECCIÓN (Bus {r['bus']} | {r['category']}): {explicacion}",
+                                    "date": datetime.now().isoformat(),
+                                    "status": "unread"
+                                })
+                                st.success("✅ Explicación enviada al Administrador con éxito.")
                         
-                        # Botón de Notificación por la App
-                        if col_app.button("🔔 Notificar en la App", key=f"req_edit_{r['id']}", use_container_width=True):
-                            from datetime import datetime
-                            REFS["data"].collection("notifications").add({
-                                "fleetId": user['fleet'],
-                                "sender": f"{user['name']} ({user['role'].upper()})",
-                                "target_role": "owner",
-                                "message": f"Solicita corregir reporte. Bus: {r['bus']} | Categoría: {r['category']} | KM erróneo: {r['km_current']}.",
-                                "date": datetime.now().isoformat(),
-                                "status": "unread"
-                            })
-                            st.success("✅ Alerta enviada al sistema del Administrador.")
+                        # 2. Botón de WhatsApp (Avisa que revisen la app)
+                        wa_text = f"Hola Administrador, necesito corregir el reporte del *Bus {r['bus']}* ({r['category']}) del *{fecha_str}*. Ya te envié la explicación detallada por la campana de notificaciones de la App. ¡Por favor revísalo cuando puedas!"
+                        wa_link = f"https://wa.me/{format_phone(APP_CONFIG['BOSS_PHONE'])}?text={urllib.parse.quote(wa_text)}"
+                        
+                        col_wa.markdown(f'<a href="{wa_link}" target="_blank" class="btn-whatsapp" style="padding:10px; font-size:14px; text-align:center; display:block;">📲 Avisar por WhatsApp</a>', unsafe_allow_html=True)
                 
                 with col_img:
                     if "photo_b64" in r and r["photo_b64"]:
