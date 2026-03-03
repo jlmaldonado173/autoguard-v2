@@ -515,7 +515,6 @@ def render_reports(df, user):
 
     with t2:
         st.subheader("🚦 Estado de Mantenimientos")
-        # Obtenemos el KM máximo reportado para cada bus
         km_reales = df.groupby('bus')['km_current'].max()
         mantenimientos = df[df['km_next'] > 0].sort_values('date', ascending=False).drop_duplicates(subset=['bus', 'category'])
         
@@ -541,8 +540,12 @@ def render_reports(df, user):
             st.info("No hay mantenimientos programados con kilometraje a futuro.")
 
     with t3:
-        st.subheader("📜 Bitácora de Movimientos (EDICIÓN)")
+        st.subheader("📜 Bitácora de Movimientos (EDICIÓN TOTAL)")
         df_sorted = df.sort_values('date', ascending=False)
+        
+        # Extraemos las listas de mecánicos y comercios que ya existen en la base de datos
+        lista_mecs = ["N/A"] + sorted([str(m) for m in df.get('mec_name', pd.Series()).unique() if pd.notna(m) and m not in ["N/A", ""]])
+        lista_coms = ["N/A"] + sorted([str(c) for c in df.get('com_name', pd.Series()).unique() if pd.notna(c) and c not in ["N/A", ""]])
         
         for _, r in df_sorted.iterrows():
             fecha_str = r['date'].strftime('%d/%m/%Y %H:%M')
@@ -562,29 +565,58 @@ def render_reports(df, user):
                         
                     st.divider()
                     
-                    # --- LÓGICA DE EDICIÓN SEGÚN ROL ---
+                    # --- LÓGICA DE EDICIÓN TOTAL SEGÚN ROL ---
                     if user['role'] == 'owner':
-                        edit_mode = st.checkbox(f"✏️ Editar / Corregir este registro", key=f"edit_check_{r['id']}")
+                        edit_mode = st.checkbox(f"✏️ Editar este registro por completo", key=f"edit_check_{r['id']}")
                         if edit_mode:
                             with st.form(f"form_edit_{r['id']}"):
-                                st.warning("Modifica los valores y guarda.")
-                                new_ka = st.number_input("Corregir KM Actual", value=int(r['km_current']), step=1)
-                                new_kn = st.number_input("Corregir Próximo (KM Meta)", value=int(r.get('km_next', 0)), step=1)
-                                new_obs = st.text_area("Corregir Detalle", value=r.get('observations', ''))
+                                st.warning("Modifica cualquier campo del reporte y guarda.")
+                                
+                                # Categorías disponibles
+                                cat_opciones = ["Aceite Motor", "Caja/Corona", "Frenos", "Llantas", "Suspensión", "Eléctrico", "Combustible", "Motor", "Otro"]
+                                cat_actual = r.get('category', 'Otro')
+                                if cat_actual not in cat_opciones: cat_opciones.append(cat_actual)
+                                
+                                new_cat = st.selectbox("Categoría", cat_opciones, index=cat_opciones.index(cat_actual))
+                                new_obs = st.text_area("Detalle", value=r.get('observations', ''))
+                                
+                                c_k1, c_k2 = st.columns(2)
+                                new_ka = c_k1.number_input("KM Actual", value=int(r['km_current']), step=1)
+                                new_kn = c_k2.number_input("Próximo (KM Meta)", value=int(r.get('km_next', 0)), step=1)
+                                
+                                # Datos financieros y de proveedores
+                                st.markdown("##### 💵 Proveedores y Costos")
+                                c_m, c_c = st.columns(2)
+                                
+                                # Manejo seguro de índices para listas
+                                m_actual = str(r.get('mec_name', 'N/A'))
+                                if m_actual not in lista_mecs: lista_mecs.append(m_actual)
+                                c_actual = str(r.get('com_name', 'N/A'))
+                                if c_actual not in lista_coms: lista_coms.append(c_actual)
+                                
+                                new_mn = c_m.selectbox("Mecánico", lista_mecs, index=lista_mecs.index(m_actual))
+                                new_mc = c_m.number_input("Costo Mano Obra $", value=float(r.get('mec_cost', 0.0)))
+                                
+                                new_rn = c_c.selectbox("Comercio", lista_coms, index=lista_coms.index(c_actual))
+                                new_rc = c_c.number_input("Costo Repuestos/Total $", value=float(r.get('com_cost', 0.0)))
                                 
                                 col_btn1, col_btn2 = st.columns(2)
-                                if col_btn1.form_submit_button("💾 Guardar Cambios", type="primary"):
+                                if col_btn1.form_submit_button("💾 Guardar Todos los Cambios", type="primary"):
                                     REFS["data"].collection("logs").document(r['id']).update({
+                                        "category": new_cat,
+                                        "observations": new_obs,
                                         "km_current": new_ka,
                                         "km_next": new_kn,
-                                        "observations": new_obs
+                                        "mec_name": new_mn,
+                                        "mec_cost": new_mc,
+                                        "com_name": new_rn,
+                                        "com_cost": new_rc
                                     })
                                     st.cache_data.clear()
-                                    st.success("✅ Registro actualizado.")
+                                    st.success("✅ Registro actualizado por completo.")
                                     time.sleep(1)
                                     st.rerun()
                                     
-                        # Botón de borrar para el dueño
                         if st.button("🗑️ Eliminar Reporte", key=f"del_rep_{r['id']}"):
                             REFS["data"].collection("logs").document(r['id']).delete()
                             st.cache_data.clear()
@@ -592,45 +624,32 @@ def render_reports(df, user):
                             
                     elif user['role'] in ['driver', 'mechanic']:
                         st.info("💡 ¿Hay algún error en este registro?")
-                        
-                        # Caja de texto para que el usuario explique el problema
-                        explicacion = st.text_area(
-                            "Explica qué está mal y cuál es el dato correcto:", 
-                            placeholder="Ej: Me equivoqué de categoría, era Suspensión. / El kilometraje correcto es 365000.",
-                            key=f"exp_{r['id']}"
-                        )
-                        
+                        explicacion = st.text_area("Explica qué está mal y cuál es el dato correcto:", key=f"exp_{r['id']}")
                         col_wa, col_app = st.columns(2)
                         
-                        # 1. Botón de Notificación Interna (App)
                         if col_app.button("🔔 Enviar Solicitud por App", key=f"req_edit_{r['id']}", use_container_width=True):
                             if explicacion.strip() == "":
-                                st.error("❌ Por favor, escribe tu explicación antes de enviar.")
+                                st.error("❌ Escribe tu explicación antes de enviar.")
                             else:
                                 from datetime import datetime
                                 REFS["data"].collection("notifications").add({
-                                    "fleetId": user['fleet'],
-                                    "sender": f"{user['name']} ({user['role'].upper()})",
-                                    "target_role": "owner",
-                                    "message": f"🚩 SOLICITUD DE CORRECCIÓN (Bus {r['bus']} | {r['category']}): {explicacion}",
-                                    "log_id": r['id'], # <--- SE ENVÍA EL ID PARA QUE EL DUEÑO PUEDA EDITARLO DIRECTO
-                                    "date": datetime.now().isoformat(),
-                                    "status": "unread"
+                                    "fleetId": user['fleet'], "sender": f"{user['name']} ({user['role'].upper()})",
+                                    "target_role": "owner", "log_id": r['id'],
+                                    "message": f"🚩 CORRECCIÓN Bus {r['bus']} ({r['category']}): {explicacion}",
+                                    "date": datetime.now().isoformat(), "status": "unread"
                                 })
-                                st.success("✅ Explicación enviada al Administrador con éxito.")
+                                st.success("✅ Explicación enviada.")
                         
-                        # 2. Botón de WhatsApp (Avisa que revisen la app)
-                        wa_text = f"Hola Administrador, necesito corregir el reporte del *Bus {r['bus']}* ({r['category']}) del *{fecha_str}*. Ya te envié la explicación detallada por la campana de notificaciones de la App. ¡Por favor revísalo cuando puedas!"
+                        wa_text = f"Hola Administrador, necesito corregir el reporte del *Bus {r['bus']}*. Ya te envié los detalles por la campana de la App."
                         wa_link = f"https://wa.me/{format_phone(APP_CONFIG['BOSS_PHONE'])}?text={urllib.parse.quote(wa_text)}"
-                        
                         col_wa.markdown(f'<a href="{wa_link}" target="_blank" class="btn-whatsapp" style="padding:10px; font-size:14px; text-align:center; display:block;">📲 Avisar por WhatsApp</a>', unsafe_allow_html=True)
                 
                 with col_img:
-                    if "photo_b64" in r and r["photo_b64"]:
+                    if "photo_b64" in r and pd.notna(r["photo_b64"]) and r["photo_b64"]:
                         try:
                             st.image(f"data:image/jpeg;base64,{r['photo_b64']}", use_container_width=True)
                         except:
-                            st.error("Error visualizando foto")
+                            st.error("Error de imagen")
 def render_accounting(df, user, phone_map):
     st.header("💰 Contabilidad y Abonos")
     
