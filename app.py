@@ -1043,7 +1043,7 @@ def main():
             menu = {
                 "🏠 Radar de Unidad": lambda: render_radar(df, u),
                 "💰 Pagos y Abonos": lambda: render_accounting(df, u, phone_map),
-                "📊 Mis Reportes": lambda: render_reports(df),
+                "📊 Reportes": lambda: render_reports(df, u)
                 "🛠️ Reportar Taller": lambda: render_workshop(u, provs),
                 "🏢 Directorio": lambda: render_directory(provs, u)
             }
