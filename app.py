@@ -1064,18 +1064,22 @@ def main():
             choice = st.sidebar.radio("Menú Mecánico:", list(menu.keys()))
             menu[choice]()
 
+    # 3. ROL DUEÑO (Un solo bloque else)
         else:
             render_radar(df, u)
             st.divider()
             menu = {
                 "⛽ Combustible": lambda: render_fuel(), 
-                "📊 Reportes": lambda: render_reports(df),
+                "📊 Reportes": lambda: render_reports(df, u),  # <--- AQUÍ AÑADÍ LA ", u"
                 "🛠️ Taller": lambda: render_workshop(u, provs),
                 "💰 Contabilidad": lambda: render_accounting(df, u, phone_map),
                 "🏢 Directorio": lambda: render_directory(provs, u),
                 "👥 Personal": lambda: render_personnel(u),
                 "🚛 Gestión": lambda: render_fleet_management(df, u),
                 "🧠 Entrenar IA": lambda: render_ai_training(u)
+            }
+            choice = st.sidebar.radio("Ir a:", list(menu.keys()))
+            menu[choice]()
             }
             choice = st.sidebar.radio("Ir a:", list(menu.keys()))
             menu[choice]()
