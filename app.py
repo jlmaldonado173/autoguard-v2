@@ -297,7 +297,7 @@ def render_radar(df, user):
         st.info("No hay datos registrados en el historial para mostrar el radar.")
         return
 
-    # 1. Selector Inteligente: El dueño/mecánico elige el bus, el chofer ve el suyo
+    # 1. Selector Inteligente
     if user['role'] in ['owner', 'mechanic']:
         buses_disponibles = sorted(df['bus'].unique())
         if not buses_disponibles:
@@ -308,13 +308,12 @@ def render_radar(df, user):
         bus_sel = user['bus']
         st.subheader(f"🎯 Unidad Asignada: {bus_sel}")
 
-    # Filtramos todo el historial solo para el bus seleccionado
     df_bus = df[df['bus'] == bus_sel]
     if df_bus.empty:
         st.warning(f"Sin historial de mantenimientos para el bus {bus_sel}.")
         return
 
-    # 2. Obtener el Kilometraje REAL ACTUAL (El máximo reportado en cualquier registro de este bus)
+    # 2. Kilometraje Real
     km_actual_real = df_bus['km_current'].max()
     
     st.markdown(f"""
@@ -326,7 +325,7 @@ def render_radar(df, user):
 
     st.subheader("🛠️ Próximos Mantenimientos (Orden de Urgencia)")
     
-    # 3. Lógica de Escáner Total: Buscamos la última meta de CADA categoría
+    # 3. Lógica de Escáner Total
     df_metas = df_bus[df_bus['km_next'] > 0].sort_values('date', ascending=False)
     ultimas_metas = df_metas.drop_duplicates(subset=['category'])
     
@@ -341,18 +340,17 @@ def render_radar(df, user):
         faltan = meta - km_actual_real
         alertas.append({"cat": cat, "faltan": faltan, "meta": meta, "fecha": r['date']})
         
-    # Ordenamos de lo más urgente (menor km faltante) a lo menos urgente
+    # Ordenamos por urgencia
     alertas = sorted(alertas, key=lambda x: x['faltan'])
     
-    # 4. Mostrar el Radar Visual
     c1, c2, c3 = st.columns(3)
     columnas = [c1, c2, c3]
     
-    # Esta variable recopilará el texto para enviárselo a la IA
-    datos_para_ia = f"El bus {bus_sel} tiene un kilometraje actual de {km_actual_real:,.0f} km. "
+    # Textos que se enviarán a la IA
+    datos_para_ia = f"El bus {bus_sel} tiene un kilometraje actual de {km_actual_real:,.0f} km.\n"
     
     for i, al in enumerate(alertas):
-        col = columnas[i % 3] # Distribuye las tarjetas en las 3 columnas
+        col = columnas[i % 3] 
         cat = al['cat']
         faltan = al['faltan']
         meta = al['meta']
@@ -362,46 +360,45 @@ def render_radar(df, user):
                 st.markdown(f"**{cat.upper()}**")
                 if faltan < 0:
                     st.error(f"🔴 **VENCIDO**\n\nPasado por {abs(faltan):,.0f} km\n\n*(Meta: {meta:,.0f})*")
-                    datos_para_ia += f"El sistema de {cat} está VENCIDO por {abs(faltan):,.0f} km. "
-                elif faltan <= 1500: # Aviso de precaución si faltan menos de 1500km
+                    datos_para_ia += f"- {cat}: VENCIDO por {abs(faltan):,.0f} km.\n"
+                elif faltan <= 1500:
                     st.warning(f"🟡 **PRÓXIMO**\n\nFaltan {faltan:,.0f} km\n\n*(Meta: {meta:,.0f})*")
-                    datos_para_ia += f"El sistema de {cat} requerirá cambio pronto, faltan {faltan:,.0f} km. "
+                    datos_para_ia += f"- {cat}: Próximo, faltan {faltan:,.0f} km.\n"
                 else:
                     st.success(f"🟢 **ÓPTIMO**\n\nFaltan {faltan:,.0f} km\n\n*(Meta: {meta:,.0f})*")
-                    datos_para_ia += f"El sistema de {cat} está en buen estado, faltan {faltan:,.0f} km. "
+                    datos_para_ia += f"- {cat}: Óptimo, faltan {faltan:,.0f} km.\n"
 
-    # 5. DIAGNÓSTICO INTELIGENTE (IA)
+    # 5. DIAGNÓSTICO INTELIGENTE USANDO TU CONFIGURACIÓN GLOBAL
     st.divider()
     st.subheader("🧠 Asesor de Taller IA")
     st.write("Haz clic para que la Inteligencia Artificial analice el radar y te dé recomendaciones estratégicas.")
     
     if st.button("🔍 Generar Diagnóstico con IA", type="primary", use_container_width=True):
-        with st.spinner("Analizando desgastes, cruzando datos del radar y generando diagnóstico..."):
-            try:
-                import google.generativeai as genai
-                # Configura la llave (Asegúrate de que APP_CONFIG tenga tu llave o ponla directo aquí si es necesario)
-                api_key = APP_CONFIG.get("GEMINI_API_KEY", "") 
-                if not api_key:
-                    st.error("No se encontró la llave GEMINI_API_KEY en tu APP_CONFIG.")
-                else:
-                    genai.configure(api_key=api_key)
-                    model = genai.GenerativeModel('gemini-1.5-flash')
-                    
-                    prompt = f"""
-                    Eres el Jefe de Taller Automotriz experto de una flota de buses pesados. 
-                    Analiza los siguientes datos extraídos del escáner de la unidad: {datos_para_ia}
-                    
-                    Actúa de forma profesional, directa y resolutiva. Redacta un reporte en 3 partes cortas:
-                    1. 🚨 **Urgente:** Qué debe detenerse o revisarse hoy mismo (si hay algo vencido).
-                    2. ⚠️ **Prevención en Ruta:** A qué deben prestar atención los choferes esta semana.
-                    3. 💡 **Consejo de Experto:** Un tip mecánico específico sobre la pieza más crítica.
-                    """
-                    
-                    response = model.generate_content(prompt)
-                    st.info(response.text)
-            except Exception as e:
-                st.error("Error al conectar con la IA. Revisa tu conexión o tu API Key.")
-                st.caption(f"Detalle técnico: {e}")
+        if not HAS_AI: # Verifica tu variable global
+            st.error("⚠️ La Inteligencia Artificial no está configurada. Revisa tus Secrets en Streamlit.")
+        else:
+            with st.spinner("Analizando desgastes y cruzando datos del radar..."):
+                try:
+                    model = get_ai_model() # Llama a tu función global
+                    if model:
+                        prompt = f"""
+                        Eres el Jefe de Taller Automotriz experto de una flota de buses pesados. 
+                        Analiza los siguientes datos extraídos del radar 360 de la unidad:
+                        
+                        {datos_para_ia}
+                        
+                        Actúa de forma profesional, directa y resolutiva. Redacta un reporte en 3 partes cortas:
+                        1. 🚨 **Urgente:** Qué debe detenerse o revisarse hoy mismo (si hay algo vencido).
+                        2. ⚠️ **Prevención en Ruta:** A qué deben prestar atención los choferes esta semana.
+                        3. 💡 **Consejo de Experto:** Un tip mecánico específico sobre la pieza más crítica.
+                        """
+                        response = model.generate_content(prompt)
+                        st.info(response.text)
+                    else:
+                        st.error("❌ No se pudo cargar el modelo de IA. Intenta de nuevo.")
+                except Exception as e:
+                    st.error("❌ Error de conexión con Google Gemini.")
+                    st.caption(f"Detalle técnico: {e}")
 
 def render_ai_training(user):
     st.header("🧠 Entrenar Inteligencia Artificial")
