@@ -461,45 +461,98 @@ def display_top_notifications(user):
         st.divider()
 
 def render_communications(user):
-    """Módulo completo para enviar mensajes entre roles"""
-    st.header("💬 Centro de Mensajes y Alertas")
+    """Módulo completo con Historial de Mensajes y Alertas"""
+    st.header("💬 Centro de Mensajes e Historial")
     
-    with st.form("send_message_form", clear_on_submit=True):
-        st.subheader("📤 Redactar Nueva Alerta")
-        
-        # Opciones de a quién enviarlo
-        roles = {"Administrador/Dueño": "owner", "Mecánicos": "mechanic", "Conductores": "driver"}
-        destino = st.selectbox("Enviar a todos los:", list(roles.keys()))
-        mensaje = st.text_area("Escribe tu mensaje o reporte:")
-        
-        c1, c2 = st.columns(2)
-        btn_app = c1.form_submit_button("🔔 Enviar Notificación por App", type="primary")
-        btn_wa = c2.form_submit_button("📲 Preparar para WhatsApp", type="secondary")
-        
-        if btn_app:
-            if mensaje:
-                REFS["data"].collection("notifications").add({
-                    "fleetId": user['fleet'],
-                    "sender": f"{user['name']} ({user['role'].upper()})",
-                    "target_role": roles[destino],
-                    "message": mensaje,
-                    "date": get_current_time(),
-                    "status": "unread"
-                })
-                st.success(f"✅ Notificación enviada al sistema de los {destino}.")
-                time.sleep(1)
-                st.rerun()
-            else:
-                st.error("❌ Por favor, escribe un mensaje.")
-                
-        if btn_wa:
-            if mensaje:
-                if roles[destino] == "owner":
-                    # Si va al administrador, usa el número del sistema
-                    link = f"https://wa.me/{format_phone(APP_CONFIG['BOSS_PHONE'])}?text={urllib.parse.quote(mensaje)}"
-                    st.markdown(f'<a href="{link}" target="_blank" class="btn-whatsapp">📲 Enviar WhatsApp al Administrador</a>', unsafe_allow_html=True)
+    # Creamos 3 pestañas: Redactar, Bandeja de Entrada y Enviados
+    t1, t2, t3 = st.tabs(["📝 Redactar Alerta", "📥 Bandeja de Entrada", "📤 Enviados"])
+    
+    with t1:
+        with st.form("send_message_form", clear_on_submit=True):
+            st.subheader("📤 Redactar Nueva Alerta")
+            
+            roles = {"Administrador/Dueño": "owner", "Mecánicos": "mechanic", "Conductores": "driver"}
+            destino = st.selectbox("Enviar a todos los:", list(roles.keys()))
+            mensaje = st.text_area("Escribe tu mensaje o reporte:")
+            
+            c1, c2 = st.columns(2)
+            btn_app = c1.form_submit_button("🔔 Enviar Notificación por App", type="primary")
+            btn_wa = c2.form_submit_button("📲 Preparar para WhatsApp", type="secondary")
+            
+            if btn_app:
+                if mensaje.strip():
+                    REFS["data"].collection("notifications").add({
+                        "fleetId": user['fleet'],
+                        "sender": f"{user['name']} ({user['role'].upper()})",
+                        "target_role": roles[destino],
+                        "message": mensaje,
+                        "date": get_current_time(),
+                        "status": "unread"
+                    })
+                    st.success(f"✅ Notificación enviada al buzón de los {destino}.")
+                    time.sleep(1)
+                    st.rerun()
                 else:
-                    st.info("💡 Para contactar por WhatsApp a un empleado específico, usa los botones en el 'Directorio' o 'Personal'. (La notificación por App sí se puede enviar masivamente).")
+                    st.error("❌ Por favor, escribe un mensaje.")
+                    
+            if btn_wa:
+                if mensaje.strip():
+                    if roles[destino] == "owner":
+                        link = f"https://wa.me/{format_phone(APP_CONFIG['BOSS_PHONE'])}?text={urllib.parse.quote(mensaje)}"
+                        st.markdown(f'<a href="{link}" target="_blank" class="btn-whatsapp">📲 Enviar WhatsApp al Administrador</a>', unsafe_allow_html=True)
+                    else:
+                        st.info("💡 Para contactar por WhatsApp a un empleado específico, usa el 'Directorio'.")
+
+    with t2:
+        st.subheader("📥 Historial de Mensajes Recibidos")
+        # Consultamos TODOS los mensajes dirigidos a este rol en esta flota
+        notifs_ref = REFS["data"].collection("notifications").where("fleetId", "==", user['fleet']).where("target_role", "==", user['role']).stream()
+        recibidos = [{"id": n.id, **n.to_dict()} for n in notifs_ref]
+        
+        if recibidos:
+            df_rec = pd.DataFrame(recibidos)
+            # Ordenamos del más nuevo al más viejo
+            df_rec['date_obj'] = pd.to_datetime(df_rec['date'])
+            df_rec = df_rec.sort_values('date_obj', ascending=False)
+            
+            for _, r in df_rec.iterrows():
+                fecha_formato = r['date_obj'].strftime('%d/%m/%Y %H:%M')
+                es_nuevo = r.get('status') == 'unread'
+                icono = "🆕 (NO LEÍDO)" if es_nuevo else "✅ (Leído)"
+                
+                with st.expander(f"{icono} | 📅 {fecha_formato} | De: {r.get('sender', 'Desconocido')}"):
+                    st.write(f"**Mensaje:** {r.get('message', '')}")
+                    
+                    if r.get('log_id'):
+                        st.caption(f"🔗 ID de Reporte vinculado: {r['log_id']}")
+                        
+                    if es_nuevo:
+                        if st.button("Marcar como leído", key=f"hist_read_{r['id']}"):
+                            REFS["data"].collection("notifications").document(r['id']).update({"status": "read"})
+                            st.rerun()
+        else:
+            st.info("No tienes mensajes en tu bandeja de entrada.")
+
+    with t3:
+        st.subheader("📤 Historial de Mensajes Enviados")
+        # Consultamos todos los mensajes enviados por el usuario actual
+        sender_id = f"{user['name']} ({user['role'].upper()})"
+        sent_ref = REFS["data"].collection("notifications").where("fleetId", "==", user['fleet']).where("sender", "==", sender_id).stream()
+        enviados = [{"id": n.id, **n.to_dict()} for n in sent_ref]
+        
+        if enviados:
+            df_env = pd.DataFrame(enviados)
+            df_env['date_obj'] = pd.to_datetime(df_env['date'])
+            df_env = df_env.sort_values('date_obj', ascending=False)
+            
+            for _, r in df_env.iterrows():
+                fecha_formato = r['date_obj'].strftime('%d/%m/%Y %H:%M')
+                estado_lectura = "Visto por destinatario 👀" if r.get('status') == 'read' else "Entregado, no leído 📩"
+                
+                with st.expander(f"📅 {fecha_formato} | Para: {r.get('target_role', '').upper()} | {estado_lectura}"):
+                    st.write(f"**Tu Mensaje:** {r.get('message', '')}")
+        else:
+            st.info("Aún no has enviado ningún mensaje por el sistema.")
 
 def render_reports(df, user):
     st.header("📊 Reportes y Auditoría")
