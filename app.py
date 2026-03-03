@@ -615,36 +615,92 @@ def render_reports(df, user):
         c2.plotly_chart(px.bar(df, x='bus', y='total_cost', title='Gastos por Unidad'), use_container_width=True)
 
     with t2:
-        st.subheader("🚦 Estado de Mantenimientos")
-        km_reales = df.groupby('bus')['km_current'].max()
-        mantenimientos = df[df['km_next'] > 0].sort_values('date', ascending=False).drop_duplicates(subset=['bus', 'category'])
+        st.subheader("🚦 Buscador y Estado de Unidades")
         
-        datos_estado = []
-        for _, r in mantenimientos.iterrows():
-            bus = r['bus']
-            km_actual_real = km_reales.get(bus, r['km_current'])
-            km_meta = r['km_next']
-            faltan = km_meta - km_actual_real
-            
-            if faltan < 0: estado = "🔴 VENCIDO"
-            elif faltan <= 500: estado = f"🟡 PRÓXIMO ({faltan:,.0f} km)"
-            else: estado = f"🟢 OK (faltan {faltan:,.0f} km)"
-                
-            datos_estado.append({
-                "Bus": bus, "Categoría": r['category'], "Estado": estado,
-                "KM Actual": km_actual_real, "Próximo Cambio": km_meta
-            })
-            
-        if datos_estado:
-            st.dataframe(pd.DataFrame(datos_estado).sort_values(['Bus', 'Categoría']), use_container_width=True, hide_index=True)
+        buses_list = sorted(df['bus'].unique())
+        
+        if not buses_list:
+            st.info("No hay unidades registradas aún.")
         else:
-            st.info("No hay mantenimientos programados con kilometraje a futuro.")
+            # --- EL BUSCADOR ---
+            bus_seleccionado = st.selectbox("🔍 Buscar por número de Unidad (Bus):", ["TODOS LOS BUSES"] + list(buses_list))
+            
+            # 1. KM máximo reportado para cada bus (El real actual)
+            km_reales = df.groupby('bus')['km_current'].max()
+            
+            # 2. Última meta programada para cada pieza
+            mantenimientos = df[df['km_next'] > 0].sort_values('date', ascending=False).drop_duplicates(subset=['bus', 'category'])
+            
+            if bus_seleccionado != "TODOS LOS BUSES":
+                # --- VISTA DETALLADA DE UN SOLO BUS ---
+                mantenimientos_bus = mantenimientos[mantenimientos['bus'] == bus_seleccionado]
+                km_actual_bus = km_reales.get(bus_seleccionado, 0)
+                
+                st.markdown(f"### 🚍 Unidad: {bus_seleccionado} | 🚗 KM Actual: **{km_actual_bus:,.0f}**")
+                
+                if mantenimientos_bus.empty:
+                    st.info(f"El Bus {bus_seleccionado} no tiene mantenimientos programados a futuro.")
+                else:
+                    datos_bus = []
+                    for _, r in mantenimientos_bus.iterrows():
+                        cat = r['category']
+                        km_meta = r['km_next']
+                        faltan = km_meta - km_actual_bus
+                        
+                        if faltan < 0: estado = "🔴 VENCIDO"
+                        elif faltan <= 1500: estado = "🟡 PRÓXIMO"
+                        else: estado = "🟢 OK"
+                            
+                        datos_bus.append({
+                            "Categoría": cat,
+                            "Estado": estado,
+                            "KM Faltantes": faltan,
+                            "Meta Programada": km_meta,
+                            "Último Reporte": r['date'].strftime('%d/%m/%Y')
+                        })
+                    
+                    # Mostrar tabla ordenada desde lo más urgente (menor KM faltante) a lo más sano
+                    df_bus = pd.DataFrame(datos_bus).sort_values('KM Faltantes')
+                    
+                    # Formatear números para que se vean bonitos en la tabla
+                    df_bus['KM Faltantes'] = df_bus['KM Faltantes'].apply(lambda x: f"{x:,.0f} km")
+                    df_bus['Meta Programada'] = df_bus['Meta Programada'].apply(lambda x: f"{x:,.0f} km")
+                    
+                    st.dataframe(df_bus, use_container_width=True, hide_index=True)
+                    
+            else:
+                # --- VISTA PANORÁMICA (TODOS LOS BUSES) ---
+                estado_flota = {}
+                for bus in km_reales.index:
+                    estado_flota[bus] = {"🚍 Unidad": bus, "🚗 KM Actual": f"{km_reales[bus]:,.0f}"}
+                    
+                for _, r in mantenimientos.iterrows():
+                    bus = r['bus']
+                    cat = r['category']
+                    km_meta = r['km_next']
+                    km_actual_real = km_reales.get(bus, r['km_current'])
+                    faltan = km_meta - km_actual_real
+                    
+                    if faltan < 0: estado = "🔴 Vencido"
+                    elif faltan <= 1500: estado = "🟡 Próximo"
+                    else: estado = "🟢 OK"
+                        
+                    estado_flota[bus][cat] = f"{estado} ({faltan:,.0f} km)"
+                    
+                if estado_flota:
+                    df_estado = pd.DataFrame(list(estado_flota.values())).fillna("⚪ -")
+                    cols_base = ["🚍 Unidad", "🚗 KM Actual"]
+                    cols_extras = sorted([c for c in df_estado.columns if c not in cols_base])
+                    df_estado = df_estado[cols_base + cols_extras]
+                    
+                    st.dataframe(df_estado, use_container_width=True, hide_index=True)
+                else:
+                    st.info("No hay metas programadas en toda la flota.")
 
     with t3:
         st.subheader("📜 Bitácora de Movimientos (EDICIÓN TOTAL)")
         df_sorted = df.sort_values('date', ascending=False)
         
-        # Extraemos las listas de mecánicos y comercios que ya existen en la base de datos
         lista_mecs = ["N/A"] + sorted([str(m) for m in df.get('mec_name', pd.Series()).unique() if pd.notna(m) and m not in ["N/A", ""]])
         lista_coms = ["N/A"] + sorted([str(c) for c in df.get('com_name', pd.Series()).unique() if pd.notna(c) and c not in ["N/A", ""]])
         
@@ -666,14 +722,12 @@ def render_reports(df, user):
                         
                     st.divider()
                     
-                    # --- LÓGICA DE EDICIÓN TOTAL SEGÚN ROL ---
                     if user['role'] == 'owner':
                         edit_mode = st.checkbox(f"✏️ Editar este registro por completo", key=f"edit_check_{r['id']}")
                         if edit_mode:
                             with st.form(f"form_edit_{r['id']}"):
                                 st.warning("Modifica cualquier campo del reporte y guarda.")
                                 
-                                # Categorías disponibles
                                 cat_opciones = ["Aceite Motor", "Caja/Corona", "Frenos", "Llantas", "Suspensión", "Eléctrico", "Combustible", "Motor", "Otro"]
                                 cat_actual = r.get('category', 'Otro')
                                 if cat_actual not in cat_opciones: cat_opciones.append(cat_actual)
@@ -685,11 +739,9 @@ def render_reports(df, user):
                                 new_ka = c_k1.number_input("KM Actual", value=int(r['km_current']), step=1)
                                 new_kn = c_k2.number_input("Próximo (KM Meta)", value=int(r.get('km_next', 0)), step=1)
                                 
-                                # Datos financieros y de proveedores
                                 st.markdown("##### 💵 Proveedores y Costos")
                                 c_m, c_c = st.columns(2)
                                 
-                                # Manejo seguro de índices para listas
                                 m_actual = str(r.get('mec_name', 'N/A'))
                                 if m_actual not in lista_mecs: lista_mecs.append(m_actual)
                                 c_actual = str(r.get('com_name', 'N/A'))
@@ -704,14 +756,10 @@ def render_reports(df, user):
                                 col_btn1, col_btn2 = st.columns(2)
                                 if col_btn1.form_submit_button("💾 Guardar Todos los Cambios", type="primary"):
                                     REFS["data"].collection("logs").document(r['id']).update({
-                                        "category": new_cat,
-                                        "observations": new_obs,
-                                        "km_current": new_ka,
-                                        "km_next": new_kn,
-                                        "mec_name": new_mn,
-                                        "mec_cost": new_mc,
-                                        "com_name": new_rn,
-                                        "com_cost": new_rc
+                                        "category": new_cat, "observations": new_obs,
+                                        "km_current": new_ka, "km_next": new_kn,
+                                        "mec_name": new_mn, "mec_cost": new_mc,
+                                        "com_name": new_rn, "com_cost": new_rc
                                     })
                                     st.cache_data.clear()
                                     st.success("✅ Registro actualizado por completo.")
