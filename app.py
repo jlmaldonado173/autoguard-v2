@@ -399,6 +399,65 @@ def render_ai_training(user):
         st.caption("✨ Actualmente la IA está entrenada con tus reglas personalizadas.")
     else:
         st.warning("⚠️ La IA está usando parámetros genéricos. Escribe tus reglas arriba para personalizarla.")
+def display_top_notifications(user):
+    """Muestra una alerta en la parte superior si el usuario tiene mensajes sin leer"""
+    if not REFS: return
+    # Busca notificaciones dirigidas al rol actual (ej. owner, driver, mechanic)
+    notifs = REFS["data"].collection("notifications").where("fleetId", "==", user['fleet']).where("target_role", "==", user['role']).where("status", "==", "unread").stream()
+    
+    lista_notifs = [{"id": n.id, **n.to_dict()} for n in notifs]
+    
+    if lista_notifs:
+        st.error(f"🔔 TIENES {len(lista_notifs)} NOTIFICACIÓN(ES) NUEVA(S)")
+        for n in lista_notifs:
+            with st.container(border=True):
+                st.write(f"📩 **De:** {n.get('sender')} | 📅 {n.get('date', '')[:10]}")
+                st.info(f"💬 {n.get('message', '')}")
+                if st.button("✅ Marcar como leído", key=f"read_{n['id']}"):
+                    REFS["data"].collection("notifications").document(n['id']).update({"status": "read"})
+                    st.rerun()
+        st.divider()
+
+def render_communications(user):
+    """Módulo completo para enviar mensajes entre roles"""
+    st.header("💬 Centro de Mensajes y Alertas")
+    
+    with st.form("send_message_form", clear_on_submit=True):
+        st.subheader("📤 Redactar Nueva Alerta")
+        
+        # Opciones de a quién enviarlo
+        roles = {"Administrador/Dueño": "owner", "Mecánicos": "mechanic", "Conductores": "driver"}
+        destino = st.selectbox("Enviar a todos los:", list(roles.keys()))
+        mensaje = st.text_area("Escribe tu mensaje o reporte:")
+        
+        c1, c2 = st.columns(2)
+        btn_app = c1.form_submit_button("🔔 Enviar Notificación por App", type="primary")
+        btn_wa = c2.form_submit_button("📲 Preparar para WhatsApp", type="secondary")
+        
+        if btn_app:
+            if mensaje:
+                REFS["data"].collection("notifications").add({
+                    "fleetId": user['fleet'],
+                    "sender": f"{user['name']} ({user['role'].upper()})",
+                    "target_role": roles[destino],
+                    "message": mensaje,
+                    "date": get_current_time(),
+                    "status": "unread"
+                })
+                st.success(f"✅ Notificación enviada al sistema de los {destino}.")
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.error("❌ Por favor, escribe un mensaje.")
+                
+        if btn_wa:
+            if mensaje:
+                if roles[destino] == "owner":
+                    # Si va al administrador, usa el número del sistema
+                    link = f"https://wa.me/{format_phone(APP_CONFIG['BOSS_PHONE'])}?text={urllib.parse.quote(mensaje)}"
+                    st.markdown(f'<a href="{link}" target="_blank" class="btn-whatsapp">📲 Enviar WhatsApp al Administrador</a>', unsafe_allow_html=True)
+                else:
+                    st.info("💡 Para contactar por WhatsApp a un empleado específico, usa los botones en el 'Directorio' o 'Personal'. (La notificación por App sí se puede enviar masivamente).")
 
 def render_reports(df, user):
     st.header("📊 Reportes y Auditoría")
@@ -491,10 +550,27 @@ def render_reports(df, user):
                             st.cache_data.clear()
                             st.rerun()
                             
-                    elif user['role'] == 'driver':
-                        wa_text = f"Hola Jefe, me equivoqué en un reporte. Por favor ayúdeme a editarlo:\n\n*Bus:* {r['bus']}\n*Fecha:* {fecha_str}\n*Categoría:* {r['category']}\n*KM Guardado:* {r['km_current']}\n\nEl kilometraje correcto debería ser: "
+                    elif user['role'] in ['driver', 'mechanic']:
+                        wa_text = f"Hola Administrador, me equivoqué en un reporte. Por favor ayúdeme a editarlo:\n\n*Bus:* {r['bus']}\n*Fecha:* {fecha_str}\n*Categoría:* {r['category']}\n*KM Guardado:* {r['km_current']}\n\nEl kilometraje correcto debería ser: "
                         wa_link = f"https://wa.me/{format_phone(APP_CONFIG['BOSS_PHONE'])}?text={urllib.parse.quote(wa_text)}"
-                        st.markdown(f'<a href="{wa_link}" target="_blank" class="btn-whatsapp" style="padding:10px; font-size:14px;">📲 Solicitar Corrección al Jefe</a>', unsafe_allow_html=True)
+                        
+                        col_wa, col_app = st.columns(2)
+                        
+                        # Botón de WhatsApp
+                        col_wa.markdown(f'<a href="{wa_link}" target="_blank" class="btn-whatsapp" style="padding:10px; font-size:14px; text-align:center; display:block;">📲 WhatsApp al Administrador</a>', unsafe_allow_html=True)
+                        
+                        # Botón de Notificación por la App
+                        if col_app.button("🔔 Notificar en la App", key=f"req_edit_{r['id']}", use_container_width=True):
+                            from datetime import datetime
+                            REFS["data"].collection("notifications").add({
+                                "fleetId": user['fleet'],
+                                "sender": f"{user['name']} ({user['role'].upper()})",
+                                "target_role": "owner",
+                                "message": f"Solicita corregir reporte. Bus: {r['bus']} | Categoría: {r['category']} | KM erróneo: {r['km_current']}.",
+                                "date": datetime.now().isoformat(),
+                                "status": "unread"
+                            })
+                            st.success("✅ Alerta enviada al sistema del Administrador.")
                 
                 with col_img:
                     if "photo_b64" in r and r["photo_b64"]:
@@ -502,7 +578,6 @@ def render_reports(df, user):
                             st.image(f"data:image/jpeg;base64,{r['photo_b64']}", use_container_width=True)
                         except:
                             st.error("Error visualizando foto")
-
 def render_accounting(df, user, phone_map):
     st.header("💰 Contabilidad y Abonos")
     
@@ -1023,6 +1098,11 @@ def main():
         provs, df = fetch_fleet_data(u['fleet'], u['role'], u['bus'], dr[0], dr[1])
         phone_map = {p['name']: p.get('phone', '') for p in provs}
 
+        # ---------------------------------------------------------
+        # 🔔 CAMPANA DE NOTIFICACIONES (Se muestra arriba para todos)
+        # ---------------------------------------------------------
+        display_top_notifications(u)
+
         # --- LÓGICA POR ROLES ---
         
         # 1. ROL CONDUCTOR
@@ -1045,12 +1125,13 @@ def main():
                         st.rerun()
             st.divider()
             
-            # ---> MENÚ CONDUCTOR (Comas corregidas) <---
+            # ---> MENÚ CONDUCTOR <---
             menu = {
                 "🏠 Radar de Unidad": lambda: render_radar(df, u),
                 "💰 Pagos y Abonos": lambda: render_accounting(df, u, phone_map),
-                "📊 Reportes": lambda: render_reports(df, u), # <--- Aquí faltaba la coma en tu código original
+                "📊 Reportes": lambda: render_reports(df, u), 
                 "🛠️ Reportar Taller": lambda: render_workshop(u, provs),
+                "💬 Mensajes": lambda: render_communications(u), # <--- NUEVO MÓDULO AÑADIDO
                 "🏢 Directorio": lambda: render_directory(provs, u)
             }
             choice = st.sidebar.radio("Más opciones:", list(menu.keys()))
@@ -1060,27 +1141,29 @@ def main():
         elif u['role'] == 'mechanic':
             st.subheader(f"🛠️ Centro de Servicio: {u['name']}")
             
-            # ---> MENÚ MECÁNICO (Corregida la 'u' en reportes) <---
+            # ---> MENÚ MECÁNICO <---
             menu = {
                 "🏠 Radar de Taller": lambda: render_radar(df, u),
                 "📝 Registrar Trabajo": lambda: render_mechanic_work(u, df, provs),
-                "📊 Historial Técnico Completo": lambda: render_reports(df, u), # <--- Añadida la ", u"
+                "📊 Historial Técnico Completo": lambda: render_reports(df, u), 
+                "💬 Mensajes": lambda: render_communications(u), # <--- NUEVO MÓDULO AÑADIDO
                 "🏢 Directorio": lambda: render_directory(provs, u)
             }
             choice = st.sidebar.radio("Menú Mecánico:", list(menu.keys()))
             menu[choice]()
 
-        # 3. ROL DUEÑO
+        # 3. ROL DUEÑO / ADMINISTRADOR
         else:
             render_radar(df, u)
             st.divider()
             
-            # ---> MENÚ DUEÑO (Limpiado de llaves y código duplicado) <---
+            # ---> MENÚ DUEÑO <---
             menu = {
                 "⛽ Combustible": lambda: render_fuel(), 
                 "📊 Reportes": lambda: render_reports(df, u), 
                 "🛠️ Taller": lambda: render_workshop(u, provs),
                 "💰 Contabilidad": lambda: render_accounting(df, u, phone_map),
+                "💬 Mensajes": lambda: render_communications(u), # <--- NUEVO MÓDULO AÑADIDO
                 "🏢 Directorio": lambda: render_directory(provs, u),
                 "👥 Personal": lambda: render_personnel(u),
                 "🚛 Gestión": lambda: render_fleet_management(df, u),
