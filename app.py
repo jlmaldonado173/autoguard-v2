@@ -974,14 +974,16 @@ def render_workshop(user, providers):
     foto_archivo = st.camera_input("Capturar evidencia", key=f"cam_{user.get('bus', 'default')}")
     
     with st.form("workshop_form_data"):
-        tp = st.radio("Tipo", ["Preventivo", "Correctivo"], horizontal=True)
+        tp = st.radio("Tipo de Mantenimiento", ["Preventivo", "Correctivo"], horizontal=True)
         
         c1, c2 = st.columns(2)
         cat = c1.selectbox("Categoría", ["Aceite Motor", "Caja", "Corona", "Frenos", "Llantas", "Suspensión", "Eléctrico", "Otro"])
-        obs = st.text_area("Detalle")
         
-        ka = c1.number_input("KM Actual", min_value=0)
-        kn = c2.number_input("Próximo", min_value=ka) if tp == "Preventivo" else 0
+        # ELIMINAMOS el 'min_value=ka' que rompía el formulario en Streamlit
+        ka = c1.number_input("KM Actual", min_value=0, step=1)
+        kn = c2.number_input("Próximo (KM Meta)", min_value=0, step=1, help="Se guardará si el tipo es Preventivo.")
+        
+        obs = st.text_area("Detalle del trabajo")
         
         st.divider()
         col_m, col_r = st.columns(2)
@@ -1000,6 +1002,9 @@ def render_workshop(user, providers):
             if ka <= 0:
                 st.error("❌ ERROR: El kilometraje debe ser mayor a 0.")
             else:
+                # 💡 AQUÍ ESTÁ LA MAGIA: Calculamos el KM final justo AL GUARDAR
+                final_kn = kn if tp == "Preventivo" else 0
+                
                 base64_photo = ""
                 if foto_archivo:
                     base64_photo = base64.b64encode(foto_archivo.getvalue()).decode()
@@ -1011,7 +1016,7 @@ def render_workshop(user, providers):
                     "category": cat,
                     "observations": obs,
                     "km_current": ka,
-                    "km_next": kn,
+                    "km_next": final_kn,  # <--- GUARDAMOS LA VARIABLE CORRECTA
                     "mec_name": mn,
                     "mec_cost": mc,
                     "mec_paid": mp,
