@@ -691,10 +691,90 @@ def render_reports(df, user):
     t1, t2, t3 = st.tabs(["📊 Gráficos Visuales", "🚦 Estado de Unidades", "📜 Historial Detallado"])
     
     with t1:
-        c1, c2 = st.columns(2)
+        st.subheader("📈 Análisis Financiero y Operativo")
+        
+        # 1. Calculamos los costos en el dataframe original
         df['total_cost'] = df.get('mec_cost', 0) + df.get('com_cost', 0)
-        c1.plotly_chart(px.pie(df, values='total_cost', names='category', title='Gastos por Categoría'), use_container_width=True)
-        c2.plotly_chart(px.bar(df, x='bus', y='total_cost', title='Gastos por Unidad'), use_container_width=True)
+        
+        # 2. Creamos el filtro independiente para el Administrador
+        buses_disp = sorted(df['bus'].unique())
+        filtro_bus = st.selectbox("🎯 Filtrar gráficos por Unidad:", ["TODA LA FLOTA"] + list(buses_disp))
+        
+        # Filtramos los datos según lo que elijas
+        df_graficos = df if filtro_bus == "TODA LA FLOTA" else df[df['bus'] == filtro_bus]
+        
+        if df_graficos.empty:
+            st.info("No hay gastos registrados para esta selección.")
+        else:
+            # 3. Tarjetas KPI (Resumen Financiero Rápido)
+            gasto_total = df_graficos['total_cost'].sum()
+            gasto_rep = df_graficos['com_cost'].sum()
+            gasto_mo = df_graficos['mec_cost'].sum()
+            
+            # Usamos CSS y SVG embebido para darle un toque premium a las métricas
+            st.markdown(f"""
+            <div style="display:flex; justify-content:space-between; gap:15px; margin-bottom: 20px;">
+                <div style="flex:1; background-color:#1E1E1E; padding:20px; border-radius:10px; border-left: 5px solid #28a745; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                    <p style="color:#AAAAAA; font-size:14px; margin:0; text-transform:uppercase;">💰 Gasto Total</p>
+                    <h2 style="color:white; margin:5px 0 0 0;">${gasto_total:,.2f}</h2>
+                </div>
+                <div style="flex:1; background-color:#1E1E1E; padding:20px; border-radius:10px; border-left: 5px solid #ffc107; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                    <p style="color:#AAAAAA; font-size:14px; margin:0; text-transform:uppercase;">🛒 Repuestos</p>
+                    <h2 style="color:white; margin:5px 0 0 0;">${gasto_rep:,.2f}</h2>
+                </div>
+                <div style="flex:1; background-color:#1E1E1E; padding:20px; border-radius:10px; border-left: 5px solid #17a2b8; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                    <p style="color:#AAAAAA; font-size:14px; margin:0; text-transform:uppercase;">👨‍🔧 Mano de Obra</p>
+                    <h2 style="color:white; margin:5px 0 0 0;">${gasto_mo:,.2f}</h2>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # 4. Gráficos Interactivos Modernos
+            col_g1, col_g2 = st.columns(2)
+            
+            # Gráfico 1: Donut Chart de Categorías
+            fig_pie = px.pie(
+                df_graficos, 
+                values='total_cost', 
+                names='category', 
+                title=f'Distribución de Gastos ({filtro_bus})',
+                hole=0.45, # Esto lo convierte en un "Donut"
+                color_discrete_sequence=px.colors.qualitative.Bold # Colores más fuertes y vivos
+            )
+            fig_pie.update_traces(textposition='inside', textinfo='percent+label', marker=dict(line=dict(color='#000000', width=1)))
+            fig_pie.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)") # Fondo transparente
+            col_g1.plotly_chart(fig_pie, use_container_width=True)
+            
+            # Gráfico 2: Dinámico según la selección
+            if filtro_bus == "TODA LA FLOTA":
+                # Ranking de unidades (Con barras de calor rojas para los más gastadores)
+                costos_por_bus = df_graficos.groupby('bus')['total_cost'].sum().reset_index()
+                fig_bar = px.bar(
+                    costos_por_bus, 
+                    x='bus', 
+                    y='total_cost', 
+                    title='Costo Total por Unidad (Ranking)',
+                    text_auto='.2s',
+                    color='total_cost', 
+                    color_continuous_scale='Reds' # 🔥 MAPA DE CALOR ROJO
+                )
+                fig_bar.update_layout(xaxis_title="Unidad (Bus)", yaxis_title="Costo ($)", coloraxis_showscale=False, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+                col_g2.plotly_chart(fig_bar, use_container_width=True)
+            else:
+                # Si el Administrador selecciona un solo bus, le mostramos la línea de tiempo de gastos
+                df_graficos['fecha_corta'] = pd.to_datetime(df_graficos['date']).dt.date
+                df_tiempo = df_graficos.groupby('fecha_corta')['total_cost'].sum().reset_index()
+                fig_line = px.line(
+                    df_tiempo, 
+                    x='fecha_corta', 
+                    y='total_cost', 
+                    title=f'Línea de Tiempo de Gastos (Bus {filtro_bus})',
+                    markers=True,
+                    line_shape='spline' # Línea curva suave
+                )
+                fig_line.update_traces(line_color="#28a745", marker=dict(size=8, color="#ffffff", line=dict(width=2, color="#28a745")))
+                fig_line.update_layout(xaxis_title="Fecha del Gasto", yaxis_title="Costo en USD", plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
+                col_g2.plotly_chart(fig_line, use_container_width=True)
 
     with t2:
         st.subheader("🚦 Buscador y Estado de Unidades")
