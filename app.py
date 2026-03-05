@@ -377,7 +377,7 @@ def render_radar(df, user):
 
     st.subheader("🛠️ Panel de Control de Sistemas")
     
-    # 3. EXTRAER TODAS LAS CATEGORÍAS (Tengan meta o no)
+    # 3. EXTRAER TODAS LAS CATEGORÍAS
     ultimos_registros = df_bus.sort_values('date', ascending=False).drop_duplicates(subset=['category'])
     
     alertas = []
@@ -388,15 +388,14 @@ def render_radar(df, user):
         if meta > 0:
             faltan = meta - km_actual_real
         else:
-            # Si no hay meta, le ponemos un número infinito para que se ordene hasta el final de la pantalla
             faltan = float('inf') 
             
         alertas.append({"cat": cat, "faltan": faltan, "meta": meta})
         
-    # Ordenamos: Vencidos -> Próximos -> Óptimos -> Grises (Sin Meta)
+    # Ordenamos: Vencidos -> Próximos -> Óptimos -> Grises
     alertas = sorted(alertas, key=lambda x: x['faltan'])
     
-    # 4. Dibujamos los Relojes en 3 columnas
+    # 4. Dibujamos los Relojes y sus BOTONES DE INFO
     c1, c2, c3 = st.columns(3)
     columnas = [c1, c2, c3]
     
@@ -409,12 +408,44 @@ def render_radar(df, user):
         meta = al['meta']
         
         with col:
-            # Dibujamos el SVG
+            # Dibujamos el reloj SVG
             reloj_svg = draw_svg_gauge(cat, faltan, meta)
             st.markdown(reloj_svg, unsafe_allow_html=True)
-            st.write("") # Espacio
             
-            # Recopilamos info para la IA
+            # --- NUEVO: VENTANA EMERGENTE (POPOVER) DE INFORMACIÓN ---
+            with st.popover(f"🔍 Ver info de {cat}", use_container_width=True):
+                st.markdown(f"**Historial de {cat}**")
+                
+                # Buscamos los últimos 3 registros de esta pieza en este bus
+                historial_cat = df_bus[df_bus['category'] == cat].sort_values('date', ascending=False).head(3)
+                
+                if not historial_cat.empty:
+                    for _, req in historial_cat.iterrows():
+                        f_str = req['date'].strftime('%d/%m/%Y')
+                        
+                        # Mostramos un mini-resumen súper claro
+                        st.caption(f"📅 **{f_str}** | KM Guardado: {req['km_current']:,.0f}")
+                        st.write(f"📝 {req.get('observations', 'Sin observaciones adicionales.')}")
+                        
+                        # Si gastó dinero, se lo mostramos
+                        costo_total = req.get('mec_cost', 0) + req.get('com_cost', 0)
+                        if costo_total > 0:
+                            st.write(f"💵 **Costo Total:** ${costo_total}")
+                            
+                        # Si hay mecánico o comercio, lo detallamos
+                        if req.get('mec_name') and req['mec_name'] != "N/A":
+                            st.caption(f"👨‍🔧 Mecánico: {req['mec_name']}")
+                        if req.get('com_name') and req['com_name'] != "N/A":
+                            st.caption(f"🛒 Repuestos: {req['com_name']}")
+                            
+                        st.divider() # Línea separadora entre mantenimientos
+                else:
+                    st.info("No hay registros detallados para mostrar.")
+            
+            # Espaciado para que se vea limpio
+            st.write("") 
+            
+            # Recopilamos info para la IA (Igual que antes)
             if meta <= 0:
                 datos_para_ia += f"- {cat}: No tiene meta de cambio programada.\n"
             elif faltan < 0:
