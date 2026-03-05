@@ -290,56 +290,66 @@ def render_super_admin():
                 REFS["fleets"].document(f.id).delete()
                 st.rerun()
 def draw_svg_gauge(categoria, faltan, meta):
-    """Genera un reloj circular SVG basado en los kilómetros faltantes."""
-    # Evitar divisiones por cero o errores
-    if meta <= 0: meta = 1
-    
-    # Calcular el porcentaje de "vida útil" que le queda a la pieza
-    porcentaje = max(0, min(100, (faltan / meta) * 100))
-    
-    # Decidir el color según la urgencia
-    if faltan < 0:
-        color = "#FF4B4B"  # Rojo (Vencido)
-        texto_estado = "VENCIDO"
-    elif faltan <= 1500:
-        color = "#ffc107"  # Amarillo (Próximo)
-        texto_estado = "PRÓXIMO"
-    else:
-        color = "#28a745"  # Verde (Óptimo)
-        texto_estado = "ÓPTIMO"
-
-    # Matemáticas del círculo SVG (Circunferencia = 2 * pi * r)
+    """Genera un reloj circular SVG. Maneja casos sin meta (Gris)."""
     radio = 40
     circunferencia = 2 * 3.14159 * radio
-    dash_offset = circunferencia - (porcentaje / 100) * circunferencia
+    
+    # CASO 1: Mantenimiento sin meta programada
+    if meta <= 0:
+        porcentaje = 0
+        color = "#555555" # Gris oscuro
+        texto_estado = "SIN META"
+        dash_offset = circunferencia # Reloj vacío
+        texto_central = "- %"
+        subtexto = "No programado"
+        
+    # CASO 2: Mantenimiento con meta (Matemática normal)
+    else:
+        # Si faltan < 0, está vencido (0% de vida útil)
+        if faltan < 0:
+            porcentaje = 0
+            color = "#FF4B4B"  # Rojo
+            texto_estado = "VENCIDO"
+            texto_central = "0%"
+        else:
+            porcentaje = min(100, (faltan / meta) * 100)
+            if faltan <= 1500:
+                color = "#ffc107"  # Amarillo
+                texto_estado = "PRÓXIMO"
+            else:
+                color = "#28a745"  # Verde
+                texto_estado = "ÓPTIMO"
+            texto_central = f"{int(porcentaje)}%"
+            
+        dash_offset = circunferencia - (porcentaje / 100) * circunferencia
+        subtexto = f"Faltan: {faltan:,.0f} km"
 
-    # Construimos el gráfico en HTML/SVG
+    # Construcción visual del SVG
     svg_html = f"""
-    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px; background-color: #1E1E1E; border-radius: 15px; border: 1px solid {color}40; box-shadow: 0 4px 10px rgba(0,0,0,0.2);">
-        <h4 style="color: white; margin-bottom: 5px; font-size: 16px; text-transform: uppercase; letter-spacing: 1px;">{categoria}</h4>
-        <svg width="120" height="120" viewBox="0 0 100 100">
+    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 15px 10px; background-color: #1E1E1E; border-radius: 15px; border: 1px solid {color}50; box-shadow: 0 6px 15px rgba(0,0,0,0.2); height: 100%;">
+        <h4 style="color: white; margin-top: 0; margin-bottom: 10px; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; text-align: center;">{categoria}</h4>
+        <svg width="100" height="100" viewBox="0 0 100 100">
             <circle cx="50" cy="50" r="{radio}" stroke="#333333" stroke-width="8" fill="none" />
             <circle cx="50" cy="50" r="{radio}" stroke="{color}" stroke-width="8" fill="none" 
                     stroke-dasharray="{circunferencia}" stroke-dashoffset="{dash_offset}" 
                     stroke-linecap="round" transform="rotate(-90 50 50)" 
-                    style="transition: stroke-dashoffset 1s ease-in-out;" />
-            <text x="50" y="45" font-family="Arial" font-size="20" font-weight="bold" fill="white" text-anchor="middle" alignment-baseline="middle">{int(porcentaje)}%</text>
-            <text x="50" y="65" font-family="Arial" font-size="10" fill="#AAAAAA" text-anchor="middle" alignment-baseline="middle">VIDA ÚTIL</text>
+                    style="transition: stroke-dashoffset 1.5s ease-in-out;" />
+            <text x="50" y="45" font-family="Arial" font-size="20" font-weight="bold" fill="white" text-anchor="middle" alignment-baseline="middle">{texto_central}</text>
+            <text x="50" y="65" font-family="Arial" font-size="9" fill="#AAAAAA" text-anchor="middle" alignment-baseline="middle">VIDA ÚTIL</text>
         </svg>
-        <p style="color: {color}; font-weight: bold; margin-top: 5px; margin-bottom: 0px;">{texto_estado}</p>
-        <p style="color: #AAAAAA; font-size: 12px; margin-top: 2px;">Faltan: {faltan:,.0f} km</p>
+        <p style="color: {color}; font-weight: bold; font-size: 14px; margin-top: 10px; margin-bottom: 0px;">{texto_estado}</p>
+        <p style="color: #AAAAAA; font-size: 12px; margin-top: 2px; margin-bottom: 0;">{subtexto}</p>
     </div>
     """
     return svg_html
-
-# --- 5. VISTAS PRINCIPALES ---
+    
 def render_radar(df, user):
     st.header("🏠 Radar de la Unidad (Escáner 360°)")
     if df.empty:
         st.info("No hay datos registrados en el historial para mostrar el radar.")
         return
 
-    # 1. Selector Inteligente
+    # 1. Selector de Bus
     if user['role'] in ['owner', 'mechanic']:
         buses_disponibles = sorted(df['bus'].unique())
         if not buses_disponibles:
@@ -365,30 +375,31 @@ def render_radar(df, user):
         <br>
     """, unsafe_allow_html=True)
 
-    st.subheader("🛠️ Próximos Mantenimientos (Orden de Urgencia)")
+    st.subheader("🛠️ Panel de Control de Sistemas")
     
-    # 3. Lógica de Escáner Total
-    df_metas = df_bus[df_bus['km_next'] > 0].sort_values('date', ascending=False)
-    ultimas_metas = df_metas.drop_duplicates(subset=['category'])
+    # 3. EXTRAER TODAS LAS CATEGORÍAS (Tengan meta o no)
+    ultimos_registros = df_bus.sort_values('date', ascending=False).drop_duplicates(subset=['category'])
     
-    if ultimas_metas.empty:
-        st.success("No hay mantenimientos futuros programados en el radar para esta unidad.")
-        return
-        
     alertas = []
-    for _, r in ultimas_metas.iterrows():
+    for _, r in ultimos_registros.iterrows():
         cat = r['category']
-        meta = r['km_next']
-        faltan = meta - km_actual_real
-        alertas.append({"cat": cat, "faltan": faltan, "meta": meta, "fecha": r['date']})
+        meta = r.get('km_next', 0)
         
-    # Ordenamos por urgencia
+        if meta > 0:
+            faltan = meta - km_actual_real
+        else:
+            # Si no hay meta, le ponemos un número infinito para que se ordene hasta el final de la pantalla
+            faltan = float('inf') 
+            
+        alertas.append({"cat": cat, "faltan": faltan, "meta": meta})
+        
+    # Ordenamos: Vencidos -> Próximos -> Óptimos -> Grises (Sin Meta)
     alertas = sorted(alertas, key=lambda x: x['faltan'])
     
+    # 4. Dibujamos los Relojes en 3 columnas
     c1, c2, c3 = st.columns(3)
     columnas = [c1, c2, c3]
     
-    # Textos que se enviarán a la IA
     datos_para_ia = f"El bus {bus_sel} tiene un kilometraje actual de {km_actual_real:,.0f} km.\n"
     
     for i, al in enumerate(alertas):
@@ -398,50 +409,48 @@ def render_radar(df, user):
         meta = al['meta']
         
         with col:
-            # Aquí llamamos a nuestra nueva fábrica de medidores SVG
+            # Dibujamos el SVG
             reloj_svg = draw_svg_gauge(cat, faltan, meta)
             st.markdown(reloj_svg, unsafe_allow_html=True)
+            st.write("") # Espacio
             
-            # Guardamos los datos para la Inteligencia Artificial igual que antes
-            if faltan < 0:
+            # Recopilamos info para la IA
+            if meta <= 0:
+                datos_para_ia += f"- {cat}: No tiene meta de cambio programada.\n"
+            elif faltan < 0:
                 datos_para_ia += f"- {cat}: VENCIDO por {abs(faltan):,.0f} km.\n"
             elif faltan <= 1500:
                 datos_para_ia += f"- {cat}: Próximo, faltan {faltan:,.0f} km.\n"
             else:
                 datos_para_ia += f"- {cat}: Óptimo, faltan {faltan:,.0f} km.\n"
-                
-    # 5. DIAGNÓSTICO INTELIGENTE USANDO TU CONFIGURACIÓN GLOBAL
+
+    # 5. DIAGNÓSTICO IA
     st.divider()
     st.subheader("🧠 Asesor de Taller IA")
-    st.write("Haz clic para que la Inteligencia Artificial analice el radar y te dé recomendaciones estratégicas.")
-    
     if st.button("🔍 Generar Diagnóstico con IA", type="primary", use_container_width=True):
-        if not HAS_AI: # Verifica tu variable global
+        if not HAS_AI: 
             st.error("⚠️ La Inteligencia Artificial no está configurada. Revisa tus Secrets en Streamlit.")
         else:
             with st.spinner("Analizando desgastes y cruzando datos del radar..."):
                 try:
-                    model = get_ai_model() # Llama a tu función global
+                    model = get_ai_model()
                     if model:
                         prompt = f"""
-                        Eres el Jefe de Taller Automotriz experto de una flota de buses pesados. 
-                        Analiza los siguientes datos extraídos del radar 360 de la unidad:
-                        
+                        Eres el Jefe de Taller Automotriz experto. Analiza este radar 360 del bus:
                         {datos_para_ia}
                         
-                        Actúa de forma profesional, directa y resolutiva. Redacta un reporte en 3 partes cortas:
-                        1. 🚨 **Urgente:** Qué debe detenerse o revisarse hoy mismo (si hay algo vencido).
-                        2. ⚠️ **Prevención en Ruta:** A qué deben prestar atención los choferes esta semana.
-                        3. 💡 **Consejo de Experto:** Un tip mecánico específico sobre la pieza más crítica.
+                        Redacta en 3 partes:
+                        1. 🚨 **Urgente:** Qué debe detenerse o revisarse hoy mismo.
+                        2. ⚠️ **Prevención:** A qué prestar atención esta semana.
+                        3. 💡 **Consejo:** Un tip sobre los sistemas "sin meta programada" si los hay.
                         """
                         response = model.generate_content(prompt)
                         st.info(response.text)
                     else:
-                        st.error("❌ No se pudo cargar el modelo de IA. Intenta de nuevo.")
+                        st.error("❌ No se pudo cargar el modelo de IA.")
                 except Exception as e:
                     st.error("❌ Error de conexión con Google Gemini.")
-                    st.caption(f"Detalle técnico: {e}")
-
+                    
 def render_ai_training(user):
     st.header("🧠 Entrenar Inteligencia Artificial")
     st.info("Escribe aquí las reglas personalizadas para tu flota (Ej: 'Alerta si el cambio de aceite supera los 10,000km' o 'El Bus 05 siempre gasta más diesel').")
