@@ -289,6 +289,48 @@ def render_super_admin():
             if c3.button("🗑️ ELIMINAR FLOTA", key=f"del_{f.id}"):
                 REFS["fleets"].document(f.id).delete()
                 st.rerun()
+def draw_svg_gauge(categoria, faltan, meta):
+    """Genera un reloj circular SVG basado en los kilómetros faltantes."""
+    # Evitar divisiones por cero o errores
+    if meta <= 0: meta = 1
+    
+    # Calcular el porcentaje de "vida útil" que le queda a la pieza
+    porcentaje = max(0, min(100, (faltan / meta) * 100))
+    
+    # Decidir el color según la urgencia
+    if faltan < 0:
+        color = "#FF4B4B"  # Rojo (Vencido)
+        texto_estado = "VENCIDO"
+    elif faltan <= 1500:
+        color = "#ffc107"  # Amarillo (Próximo)
+        texto_estado = "PRÓXIMO"
+    else:
+        color = "#28a745"  # Verde (Óptimo)
+        texto_estado = "ÓPTIMO"
+
+    # Matemáticas del círculo SVG (Circunferencia = 2 * pi * r)
+    radio = 40
+    circunferencia = 2 * 3.14159 * radio
+    dash_offset = circunferencia - (porcentaje / 100) * circunferencia
+
+    # Construimos el gráfico en HTML/SVG
+    svg_html = f"""
+    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px; background-color: #1E1E1E; border-radius: 15px; border: 1px solid {color}40; box-shadow: 0 4px 10px rgba(0,0,0,0.2);">
+        <h4 style="color: white; margin-bottom: 5px; font-size: 16px; text-transform: uppercase; letter-spacing: 1px;">{categoria}</h4>
+        <svg width="120" height="120" viewBox="0 0 100 100">
+            <circle cx="50" cy="50" r="{radio}" stroke="#333333" stroke-width="8" fill="none" />
+            <circle cx="50" cy="50" r="{radio}" stroke="{color}" stroke-width="8" fill="none" 
+                    stroke-dasharray="{circunferencia}" stroke-dashoffset="{dash_offset}" 
+                    stroke-linecap="round" transform="rotate(-90 50 50)" 
+                    style="transition: stroke-dashoffset 1s ease-in-out;" />
+            <text x="50" y="45" font-family="Arial" font-size="20" font-weight="bold" fill="white" text-anchor="middle" alignment-baseline="middle">{int(porcentaje)}%</text>
+            <text x="50" y="65" font-family="Arial" font-size="10" fill="#AAAAAA" text-anchor="middle" alignment-baseline="middle">VIDA ÚTIL</text>
+        </svg>
+        <p style="color: {color}; font-weight: bold; margin-top: 5px; margin-bottom: 0px;">{texto_estado}</p>
+        <p style="color: #AAAAAA; font-size: 12px; margin-top: 2px;">Faltan: {faltan:,.0f} km</p>
+    </div>
+    """
+    return svg_html
 
 # --- 5. VISTAS PRINCIPALES ---
 def render_radar(df, user):
@@ -356,18 +398,18 @@ def render_radar(df, user):
         meta = al['meta']
         
         with col:
-            with st.container(border=True):
-                st.markdown(f"**{cat.upper()}**")
-                if faltan < 0:
-                    st.error(f"🔴 **VENCIDO**\n\nPasado por {abs(faltan):,.0f} km\n\n*(Meta: {meta:,.0f})*")
-                    datos_para_ia += f"- {cat}: VENCIDO por {abs(faltan):,.0f} km.\n"
-                elif faltan <= 1500:
-                    st.warning(f"🟡 **PRÓXIMO**\n\nFaltan {faltan:,.0f} km\n\n*(Meta: {meta:,.0f})*")
-                    datos_para_ia += f"- {cat}: Próximo, faltan {faltan:,.0f} km.\n"
-                else:
-                    st.success(f"🟢 **ÓPTIMO**\n\nFaltan {faltan:,.0f} km\n\n*(Meta: {meta:,.0f})*")
-                    datos_para_ia += f"- {cat}: Óptimo, faltan {faltan:,.0f} km.\n"
-
+            # Aquí llamamos a nuestra nueva fábrica de medidores SVG
+            reloj_svg = draw_svg_gauge(cat, faltan, meta)
+            st.markdown(reloj_svg, unsafe_allow_html=True)
+            
+            # Guardamos los datos para la Inteligencia Artificial igual que antes
+            if faltan < 0:
+                datos_para_ia += f"- {cat}: VENCIDO por {abs(faltan):,.0f} km.\n"
+            elif faltan <= 1500:
+                datos_para_ia += f"- {cat}: Próximo, faltan {faltan:,.0f} km.\n"
+            else:
+                datos_para_ia += f"- {cat}: Óptimo, faltan {faltan:,.0f} km.\n"
+                
     # 5. DIAGNÓSTICO INTELIGENTE USANDO TU CONFIGURACIÓN GLOBAL
     st.divider()
     st.subheader("🧠 Asesor de Taller IA")
