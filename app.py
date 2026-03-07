@@ -1613,6 +1613,77 @@ def render_ai_chat(df, user):
                 
             except Exception as e:
                 st.error(f"Hubo un error al conectar con el cerebro de IA Itero: {e}")
+def render_cierre_caja(df, user):
+    st.header("💵 Cierre de Caja Mensual")
+    st.caption("Calcula la rentabilidad real de tu flota. La app cruzará tus ingresos con los gastos de taller registrados.")
+    
+    # 1. Preparar las fechas y meses disponibles
+    hoy = datetime.now()
+    mes_actual = hoy.strftime('%Y-%m')
+    
+    if not df.empty and 'date' in df.columns:
+        df_calc = df.copy()
+        df_calc['date_obj'] = pd.to_datetime(df_calc['date'])
+        df_calc['mes'] = df_calc['date_obj'].dt.strftime('%Y-%m')
+        meses_disp = sorted(list(df_calc['mes'].unique()), reverse=True)
+        if mes_actual not in meses_disp:
+            meses_disp.insert(0, mes_actual)
+    else:
+        meses_disp = [mes_actual]
+        df_calc = pd.DataFrame()
+        
+    # 2. Selector de Mes
+    mes_sel = st.selectbox("📅 Seleccionar Mes a Evaluar", meses_disp)
+    
+    # 3. Extraer automáticamente los gastos de ese mes desde la base de datos
+    if not df_calc.empty and 'mes' in df_calc.columns:
+        df_mes = df_calc[df_calc['mes'] == mes_sel]
+        gastos_mec = df_mes['mec_cost'].sum() if 'mec_cost' in df_mes.columns else 0
+        gastos_com = df_mes['com_cost'].sum() if 'com_cost' in df_mes.columns else 0
+    else:
+        gastos_mec = 0
+        gastos_com = 0
+        
+    gastos_taller_app = gastos_mec + gastos_com
+    
+    # 4. Formulario de Ingresos y Pagos
+    st.subheader("💰 Balance Operativo")
+    with st.form("cierre_caja_form"):
+        c1, c2, c3 = st.columns(3)
+        ingresos = c1.number_input("📈 Ingresos Brutos del Mes ($)", min_value=0.0, step=100.0, help="Todo el dinero que hizo la unidad.")
+        pago_chofer = c2.number_input("🧑‍✈️ Sueldo/Pago Conductor ($)", min_value=0.0, step=50.0, help="Lo que le pagaste al chofer este mes.")
+        otros_gastos = c3.number_input("📝 Otros Gastos (Peajes, multas) ($)", min_value=0.0, step=10.0)
+        
+        st.markdown("---")
+        st.write("🔧 **Gastos extraídos automáticamente de la App este mes:**")
+        col_g1, col_g2, col_g3 = st.columns(3)
+        col_g1.metric("Mano de Obra (Mecánicos)", f"${gastos_mec:,.2f}")
+        col_g2.metric("Repuestos (Comercios)", f"${gastos_com:,.2f}")
+        col_g3.metric("Total Gastos de Taller", f"${gastos_taller_app:,.2f}")
+        
+        calcular = st.form_submit_button("🧮 CALCULAR RENTABILIDAD", type="primary", use_container_width=True)
+        
+        if calcular:
+            # Cálculos financieros
+            total_egresos = pago_chofer + otros_gastos + gastos_taller_app
+            utilidad = ingresos - total_egresos
+            margen = (utilidad / ingresos) * 100 if ingresos > 0 else 0
+            
+            st.markdown("### 📊 Resultado Financiero del Mes")
+            
+            if utilidad > 0:
+                st.success(f"## 🎉 GANANCIA NETA: ${utilidad:,.2f}")
+                st.balloons() # ¡Animación de celebración si hay ganancias!
+            elif utilidad < 0:
+                st.error(f"## 🚨 PÉRDIDA NETA: ${utilidad:,.2f}")
+            else:
+                st.info(f"## ⚖️ PUNTO DE EQUILIBRIO: $0.00")
+                
+            c_res1, c_res2, c_res3 = st.columns(3)
+            c_res1.metric("Total Ingresos", f"${ingresos:,.2f}")
+            c_res2.metric("Total Egresos (Gastos + Sueldo)", f"${total_egresos:,.2f}")
+            c_res3.metric("Margen de Ganancia", f"{margen:.1f}%")
+            
 def main():
     if 'user' not in st.session_state:
         ui_render_login()
@@ -1691,9 +1762,9 @@ def main():
             
            # ---> MENÚ DUEÑO <---
             menu = {
-                "⛽ Combustible": lambda: render_fuel(), 
+                "💵 Cierre de Caja": lambda: render_cierre_caja(df, u), # <--- AQUÍ ESTÁ EL NUEVO MÓDULO
                 "🏠 Radar / Escáner": lambda: render_radar(df, u),
-                "🤖 Chat Asistente IA": lambda: render_ai_chat(df, u), # <--- AGREGADO
+                "🤖 Chat Asistente IA": lambda: render_ai_chat(df, u),
                 "📊 Reportes": lambda: render_reports(df, u), 
                 "🛠️ Taller": lambda: render_workshop(u, provs),
                 "💰 Contabilidad": lambda: render_accounting(df, u, phone_map),
