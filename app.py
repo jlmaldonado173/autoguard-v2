@@ -1484,6 +1484,92 @@ def render_mechanic_work(user, df, providers):
                 st.success("✅ Reporte enviado. Los radares han sido actualizados.")
                 time.sleep(1)
                 st.rerun()
+                
+def render_ai_chat(df, user):
+    st.header("🤖 Asistente de Flota IA")
+    st.caption("Escribe cualquier pregunta sobre tus mantenimientos, unidades o gastos. La IA revisará la base de datos para responderte.")
+
+    if not HAS_AI:
+        st.error("⚠️ La Inteligencia Artificial no está configurada. Revisa tus Secrets.")
+        return
+
+    # 1. Inicializar el historial de chat en la sesión
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+
+    # 2. Mostrar los mensajes anteriores
+    for message in st.session_state.chat_history:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # 3. Caja de texto para que el usuario pregunte
+    if prompt := st.chat_input("Ej: ¿Cuánto falta para cambiar las llantas del Bus 05?"):
+        
+        # Mostrar lo que escribió el usuario
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        st.session_state.chat_history.append({"role": "user", "content": prompt})
+
+        # 4. Preparar los datos para que la IA los lea
+        with st.spinner("Analizando historiales, manuales y desgastes..."):
+            try:
+                model = get_ai_model()
+                
+                # A. Traer las reglas del dueño
+                fleet_doc = REFS["fleets"].document(user['fleet']).get()
+                ai_rules = fleet_doc.to_dict().get("ai_rules", "") if fleet_doc.exists else ""
+                
+                # B. Construir un resumen del estado de los buses
+                contexto_datos = "ESTADO ACTUAL DE LOS MANTENIMIENTOS:\n"
+                if not df.empty:
+                    df['total_cost'] = df.get('mec_cost', 0) + df.get('com_cost', 0)
+                    km_reales = df.groupby('bus')['km_current'].max().to_dict()
+                    ultimos_mantenimientos = df.sort_values('date', ascending=False).drop_duplicates(subset=['bus', 'category'])
+                    
+                    for _, r in ultimos_mantenimientos.iterrows():
+                        b = r['bus']
+                        c = r['category']
+                        km_act = km_reales.get(b, 0)
+                        km_meta = r.get('km_next', 0)
+                        if km_meta > 0:
+                            faltan = km_meta - km_act
+                            estado = f"Faltan {faltan:,.0f} km" if faltan >= 0 else f"VENCIDO por {abs(faltan):,.0f} km"
+                        else:
+                            estado = "Sin meta programada a futuro."
+                            
+                        contexto_datos += f"- Bus {b} | {c}: KM Actual ({km_act:,.0f}). Meta Programada ({km_meta:,.0f}). Estado: {estado}.\n"
+                        
+                    logs_recientes = df[['date', 'bus', 'category', 'total_cost']].head(15).to_string()
+                else:
+                    logs_recientes = "No hay registros."
+
+                # C. Enviar todo al cerebro de la IA
+                sys_prompt = f"""
+                Eres ITERO, el Asistente Experto en Gestión de Flotas. 
+                El usuario '{user['name']}' (Rol: {user['role']}) te hace una pregunta.
+                
+                REGLAS Y MANUAL DE LA EMPRESA:
+                {ai_rules}
+                
+                {contexto_datos}
+                
+                ÚLTIMOS TRABAJOS REGISTRADOS:
+                {logs_recientes}
+                
+                Pregunta del usuario: {prompt}
+                
+                INSTRUCCIONES: Responde de forma natural, como un humano experto. Sé directo. Si te preguntan cuánto falta para un mantenimiento, haz el cálculo exacto basado en la tabla que te pasé. Usa emojis para que sea fácil de leer.
+                """
+                
+                response = model.generate_content(sys_prompt)
+                
+                # Mostrar respuesta de la IA
+                with st.chat_message("assistant"):
+                    st.markdown(response.text)
+                st.session_state.chat_history.append({"role": "assistant", "content": response.text})
+                
+            except Exception as e:
+                st.error(f"Error al pensar: {e}")
 def main():
     if 'user' not in st.session_state:
         ui_render_login()
@@ -1529,10 +1615,11 @@ def main():
             # ---> MENÚ CONDUCTOR <---
             menu = {
                 "🏠 Radar de Unidad": lambda: render_radar(df, u),
+                "🤖 Chat IA": lambda: render_ai_chat(df, u), # <--- AGREGADO
                 "💰 Pagos y Abonos": lambda: render_accounting(df, u, phone_map),
                 "📊 Reportes": lambda: render_reports(df, u), 
                 "🛠️ Reportar Taller": lambda: render_workshop(u, provs),
-                "💬 Mensajes": lambda: render_communications(u), # <--- NUEVO MÓDULO AÑADIDO
+                "💬 Mensajes": lambda: render_communications(u),
                 "🏢 Directorio": lambda: render_directory(provs, u)
             }
             choice = st.sidebar.radio("Más opciones:", list(menu.keys()))
@@ -1545,9 +1632,10 @@ def main():
             # ---> MENÚ MECÁNICO <---
             menu = {
                 "🏠 Radar de Taller": lambda: render_radar(df, u),
+                "🤖 Chat IA": lambda: render_ai_chat(df, u), # <--- AGREGADO
                 "📝 Registrar Trabajo": lambda: render_mechanic_work(u, df, provs),
-                "📊 Historial Técnico Completo": lambda: render_reports(df, u), 
-                "💬 Mensajes": lambda: render_communications(u), # <--- NUEVO MÓDULO AÑADIDO
+                "📊 Historial Técnico": lambda: render_reports(df, u), 
+                "💬 Mensajes": lambda: render_communications(u),
                 "🏢 Directorio": lambda: render_directory(provs, u)
             }
             choice = st.sidebar.radio("Menú Mecánico:", list(menu.keys()))
@@ -1558,13 +1646,15 @@ def main():
             render_radar(df, u)
             st.divider()
             
-            # ---> MENÚ DUEÑO <---
+           # ---> MENÚ DUEÑO <---
             menu = {
                 "⛽ Combustible": lambda: render_fuel(), 
+                "🏠 Radar / Escáner": lambda: render_radar(df, u),
+                "🤖 Chat Asistente IA": lambda: render_ai_chat(df, u), # <--- AGREGADO
                 "📊 Reportes": lambda: render_reports(df, u), 
                 "🛠️ Taller": lambda: render_workshop(u, provs),
                 "💰 Contabilidad": lambda: render_accounting(df, u, phone_map),
-                "💬 Mensajes": lambda: render_communications(u), # <--- NUEVO MÓDULO AÑADIDO
+                "💬 Mensajes": lambda: render_communications(u), 
                 "🏢 Directorio": lambda: render_directory(provs, u),
                 "👥 Personal": lambda: render_personnel(u),
                 "🚛 Gestión": lambda: render_fleet_management(df, u),
