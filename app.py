@@ -627,10 +627,13 @@ def render_communications(user):
                 if mensaje.strip():
                     if roles[destino] == "owner":
                         link = f"https://wa.me/{format_phone(APP_CONFIG['BOSS_PHONE'])}?text={urllib.parse.quote(mensaje)}"
-                        st.markdown(f'<a href="{link}" target="_blank" class="btn-whatsapp">📲 Enviar WhatsApp al Administrador</a>', unsafe_allow_html=True)
+                        
+                        # --- EL LOGO SVG DE WHATSAPP ---
+                        svg_whatsapp = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" width="16" height="16" fill="white" style="vertical-align: middle; margin-right: 8px;"><path d="M380.9 97.1C339 55.1 283.2 32 223.9 32c-122.4 0-222 99.6-222 222 0 39.1 10.2 77.3 29.6 111L0 480l117.7-30.9c32.4 17.7 68.9 27 106.1 27h.1c122.3 0 224.1-99.6 224.1-222 0-59.3-25.2-115-67.1-157.1zm-157 341.6c-33.2 0-65.7-8.9-94-25.7l-6.7-4-69.8 18.3L72 359.2l-4.4-7c-18.5-29.4-28.2-63.3-28.2-98.2 0-101.7 82.8-184.5 184.6-184.5 49.3 0 95.6 19.2 130.4 54.1 34.8 34.9 56.2 81.2 56.1 130.5 0 101.8-84.9 184.6-186.6 184.6zm101.2-138.2c-5.5-2.8-32.8-16.2-37.9-18-5.1-1.9-8.8-2.8-12.5 2.8-3.7 5.6-14.3 18-17.6 21.8-3.2 3.7-6.5 4.2-12 1.4-32.6-16.3-54-29.1-75.5-66-5.7-9.8 5.7-9.1 16.3-30.3 1.8-3.7.9-6.9-.5-9.7-1.4-2.8-12.5-30.1-17.1-41.2-4.5-10.8-9.1-9.3-12.5-9.5-3.2-.2-6.9-.2-10.6-.2-3.7 0-9.7 1.4-14.8 6.9-5.1 5.6-19.4 19-19.4 46.3 0 27.3 19.9 53.7 22.6 57.4 2.8 3.7 39.1 59.7 94.8 83.8 35.2 15.2 49 16.5 66.6 13.9 10.7-1.6 32.8-13.4 37.4-26.4 4.6-13 4.6-24.1 3.2-26.4-1.3-2.5-5-3.9-10.5-6.6z"/></svg>"""
+                        
+                        st.markdown(f'<a href="{link}" target="_blank" class="btn-whatsapp" style="display:flex; justify-content:center; align-items:center;">{svg_whatsapp} Enviar WhatsApp al Administrador</a>', unsafe_allow_html=True)
                     else:
                         st.info("💡 Para contactar por WhatsApp a un empleado específico, usa el 'Directorio'.")
-
     with t2:
         st.subheader("📥 Historial de Mensajes Recibidos")
         # Consultamos TODOS los mensajes dirigidos a este rol en esta flota
@@ -1486,32 +1489,53 @@ def render_mechanic_work(user, df, providers):
                 st.rerun()
                 
 def render_ai_chat(df, user):
-    st.header("🤖 Asistente de Flota IA")
-    st.caption("Escribe cualquier pregunta sobre tus mantenimientos, unidades o gastos. La IA revisará la base de datos para responderte.")
+    # --- 1. EL LOGO SVG Y TÍTULO DE GEMINI ---
+    gemini_svg = """
+    <svg width="45" height="45" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <linearGradient id="gemini-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#4285F4" />
+                <stop offset="50%" stop-color="#9B72CB" />
+                <stop offset="100%" stop-color="#D96570" />
+            </linearGradient>
+        </defs>
+        <path d="M12.0001 2.00013C12.0001 2.00013 14.5882 8.71887 21.0001 10.4357C15.0589 11.8082 12.0001 22.0001 12.0001 22.0001C12.0001 22.0001 8.94129 11.8082 3.00012 10.4357C9.41201 8.71887 12.0001 2.00013 12.0001 2.00013Z" fill="url(#gemini-gradient)"/>
+        <path d="M19 14C19 14 19.8627 16.2396 22 16.8119C20.0196 17.2694 19 20.6667 19 20.6667C19 20.6667 17.9804 17.2694 16 16.8119C18.1373 16.2396 19 14 19 14Z" fill="url(#gemini-gradient)"/>
+    </svg>
+    """
+    
+    st.markdown(f"""
+        <div style="display:flex; align-items:center; gap:15px; margin-bottom: 5px; padding-bottom: 15px; border-bottom: 1px solid #333333;">
+            {gemini_svg}
+            <h1 style="margin:0; font-size: 36px; background: -webkit-linear-gradient(45deg, #4285F4, #9B72CB, #D96570); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 800;">Asistente Inteligente</h1>
+        </div>
+        <p style="color:#AAAAAA; font-size: 15px; margin-bottom: 25px; margin-top: 10px;">Pregúntame sobre mantenimientos, gastos, historiales y predicciones de tus unidades.</p>
+    """, unsafe_allow_html=True)
 
     if not HAS_AI:
-        st.error("⚠️ La Inteligencia Artificial no está configurada. Revisa tus Secrets.")
+        st.error("⚠️ La Inteligencia Artificial no está configurada. Revisa tus Secrets en Streamlit.")
         return
 
-    # 1. Inicializar el historial de chat en la sesión
+    # --- 2. HISTORIAL DE CHAT ---
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
 
-    # 2. Mostrar los mensajes anteriores
+    # Mostrar los mensajes anteriores (Usando avatares personalizados)
     for message in st.session_state.chat_history:
-        with st.chat_message(message["role"]):
+        # El usuario es un humano 🧑‍💻, la IA es el destello de Gemini ✨
+        avatar_icono = "🧑‍💻" if message["role"] == "user" else "✨"
+        with st.chat_message(message["role"], avatar=avatar_icono):
             st.markdown(message["content"])
 
-    # 3. Caja de texto para que el usuario pregunte
-    if prompt := st.chat_input("Ej: ¿Cuánto falta para cambiar las llantas del Bus 05?"):
+    # --- 3. CAJA DE TEXTO DEL USUARIO ---
+    if prompt := st.chat_input("Ej: ¿Cuánto falta para la calibración de válvulas del Bus 05?"):
         
-        # Mostrar lo que escribió el usuario
-        with st.chat_message("user"):
+        with st.chat_message("user", avatar="🧑‍💻"):
             st.markdown(prompt)
         st.session_state.chat_history.append({"role": "user", "content": prompt})
 
-        # 4. Preparar los datos para que la IA los lea
-        with st.spinner("Analizando historiales, manuales y desgastes..."):
+        # --- 4. PROCESAMIENTO CON LA IA ---
+        with st.spinner("Buscando en los registros de Itero AI..."):
             try:
                 model = get_ai_model()
                 
@@ -1519,7 +1543,7 @@ def render_ai_chat(df, user):
                 fleet_doc = REFS["fleets"].document(user['fleet']).get()
                 ai_rules = fleet_doc.to_dict().get("ai_rules", "") if fleet_doc.exists else ""
                 
-                # B. Construir un resumen del estado de los buses
+                # B. Construir un resumen exacto del estado de los buses
                 contexto_datos = "ESTADO ACTUAL DE LOS MANTENIMIENTOS:\n"
                 if not df.empty:
                     df['total_cost'] = df.get('mec_cost', 0) + df.get('com_cost', 0)
@@ -1539,13 +1563,14 @@ def render_ai_chat(df, user):
                             
                         contexto_datos += f"- Bus {b} | {c}: KM Actual ({km_act:,.0f}). Meta Programada ({km_meta:,.0f}). Estado: {estado}.\n"
                         
-                    logs_recientes = df[['date', 'bus', 'category', 'total_cost']].head(15).to_string()
+                    # Agregamos las observaciones para que la IA sepa "qué pasó"
+                    logs_recientes = df[['date', 'bus', 'category', 'total_cost', 'observations']].head(20).to_string()
                 else:
                     logs_recientes = "No hay registros."
 
-                # C. Enviar todo al cerebro de la IA
+                # C. Enviar todo al cerebro de Gemini
                 sys_prompt = f"""
-                Eres ITERO, el Asistente Experto en Gestión de Flotas. 
+                Eres Gemini, el Asistente Experto en Gestión Automotriz de la flota ITERO. 
                 El usuario '{user['name']}' (Rol: {user['role']}) te hace una pregunta.
                 
                 REGLAS Y MANUAL DE LA EMPRESA:
@@ -1558,18 +1583,23 @@ def render_ai_chat(df, user):
                 
                 Pregunta del usuario: {prompt}
                 
-                INSTRUCCIONES: Responde de forma natural, como un humano experto. Sé directo. Si te preguntan cuánto falta para un mantenimiento, haz el cálculo exacto basado en la tabla que te pasé. Usa emojis para que sea fácil de leer.
+                INSTRUCCIONES DE IDENTIDAD Y RESPUESTA:
+                1. Eres una IA inteligente, amistosa y muy analítica.
+                2. Si el usuario te pregunta por kilómetros faltantes, busca en la tabla "ESTADO ACTUAL" y da la respuesta exacta. 
+                3. Usa negritas (**) para resaltar números importantes, costos y nombres de piezas.
+                4. Usa listas si tienes que darle varias recomendaciones.
+                5. No muestres código ni parezcas un robot leyendo una tabla; exprésalo como un humano experto.
                 """
                 
                 response = model.generate_content(sys_prompt)
                 
-                # Mostrar respuesta de la IA
-                with st.chat_message("assistant"):
+                # Mostrar respuesta de Gemini
+                with st.chat_message("assistant", avatar="✨"):
                     st.markdown(response.text)
                 st.session_state.chat_history.append({"role": "assistant", "content": response.text})
                 
             except Exception as e:
-                st.error(f"Error al pensar: {e}")
+                st.error(f"Hubo un error de conexión con la IA: {e}")
 def main():
     if 'user' not in st.session_state:
         ui_render_login()
