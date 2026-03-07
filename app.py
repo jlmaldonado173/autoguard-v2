@@ -618,27 +618,27 @@ def render_communications(user):
                     "status": "unread"
                 })
                 
-                st.success("✅ ¡Mensaje guardado! Abriendo WhatsApp...")
+                st.success("✅ ¡Mensaje guardado! Abriendo la App de WhatsApp...")
                 
-                # 2. Preparamos el enlace de WhatsApp
+                # 2. Preparamos el enlace PROFUNDO (Deep Link) de WhatsApp
                 texto_wa = f"🚨 *AVISO DE ITERO AI*\nHola, te he dejado un nuevo mensaje en el sistema:\n\n_{mensaje}_\n\nIngresa a la app para revisarlo."
                 
                 if roles[destino] == "owner":
-                    # --- AQUÍ ESTÁ LA MAGIA: LEER EL NÚMERO REAL DEL DUEÑO ---
                     fleet_doc = REFS["fleets"].document(user['fleet']).get()
                     numero_admin = fleet_doc.to_dict().get("boss_phone", APP_CONFIG['BOSS_PHONE']) if fleet_doc.exists else APP_CONFIG['BOSS_PHONE']
                     
-                    link = f"https://wa.me/{format_phone(numero_admin)}?text={urllib.parse.quote(texto_wa)}"
+                    # MAGIA AQUÍ: Usamos whatsapp:// en lugar de https://
+                    link = f"whatsapp://send?phone={format_phone(numero_admin)}&text={urllib.parse.quote(texto_wa)}"
                 else:
-                    link = f"https://wa.me/?text={urllib.parse.quote(texto_wa)}"
+                    link = f"whatsapp://send?text={urllib.parse.quote(texto_wa)}"
                 
-                # 3. TRUCO JAVASCRIPT: Forzar la apertura de WhatsApp automáticamente
+                # 3. TRUCO JAVASCRIPT: window.location fuerza a abrir la app sin abrir pestañas extra
                 js_abrir_wa = f"""
                 <script>
-                    window.open('{link}', '_blank');
+                    window.parent.location.href = '{link}';
                 </script>
                 """
-                # Inyectamos el código en la app sin que se vea
+                # Inyectamos el código
                 st.components.v1.html(js_abrir_wa, height=0)
                 
             else:
