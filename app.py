@@ -1614,66 +1614,90 @@ def render_ai_chat(df, user):
             except Exception as e:
                 st.error(f"Hubo un error al conectar con el cerebro de IA Itero: {e}")
 def render_cierre_caja(df, user):
-    st.header("💵 Cierre de Caja Mensual")
-    st.caption("Calcula la rentabilidad real de tu flota. La app cruzará tus ingresos con los gastos de taller registrados.")
+    st.header("💵 Cierre de Caja y Rentabilidad")
+    st.caption("Evalúa si tu negocio es rentable. Calcula los márgenes de toda la flota o de una unidad específica.")
     
-    # 1. Preparar las fechas y meses disponibles
-    hoy = datetime.now()
-    mes_actual = hoy.strftime('%Y-%m')
+    # 1. GENERAR MESES SIEMPRE (Haya o no haya datos)
+    mes_actual = datetime.now().strftime('%Y-%m')
+    
+    # Creamos una lista obligatoria con los últimos 12 meses
+    meses_base = pd.date_range(end=pd.Timestamp.now(), periods=12, freq='MS').strftime('%Y-%m').tolist()
+    meses_base.reverse() # Ordenamos para que el mes más reciente esté primero
     
     if not df.empty and 'date' in df.columns:
         df_calc = df.copy()
         df_calc['date_obj'] = pd.to_datetime(df_calc['date'])
         df_calc['mes'] = df_calc['date_obj'].dt.strftime('%Y-%m')
-        meses_disp = sorted(list(df_calc['mes'].unique()), reverse=True)
-        if mes_actual not in meses_disp:
-            meses_disp.insert(0, mes_actual)
+        meses_db = df_calc['mes'].unique().tolist()
     else:
-        meses_disp = [mes_actual]
         df_calc = pd.DataFrame()
+        meses_db = []
         
-    # 2. Selector de Mes
-    mes_sel = st.selectbox("📅 Seleccionar Mes a Evaluar", meses_disp)
+    # Unimos los meses generados con los históricos y quitamos duplicados
+    meses_disp = list(dict.fromkeys(meses_base + meses_db))
+    if mes_actual not in meses_disp:
+        meses_disp.insert(0, mes_actual)
+        
+    # 2. SELECTORES DE MES Y ALCANCE (Flota vs Unidad)
+    c_top1, c_top2 = st.columns(2)
+    mes_sel = c_top1.selectbox("📅 Mes a Evaluar", meses_disp, key="cierre_mes_sel")
+    tipo_cierre = c_top2.radio("🎯 Alcance del Cierre", ["Toda la Flota", "Por Unidad"], horizontal=True)
     
-    # 3. Extraer automáticamente los gastos de ese mes desde la base de datos
+    bus_sel = None
+    if tipo_cierre == "Por Unidad":
+        if not df.empty and 'bus' in df.columns:
+            buses_disponibles = sorted(list(df['bus'].dropna().unique()))
+        else:
+            buses_disponibles = ["Sin Unidades"]
+            
+        # Agregamos un KEY único para evitar el error de Streamlit
+        bus_sel = st.selectbox("🚌 Selecciona la Unidad", buses_disponibles, key="cierre_bus_sel_caja")
+
+    # 3. EXTRAER GASTOS SEGÚN LO SELECCIONADO (Flota o Unidad)
+    df_mes = pd.DataFrame()
     if not df_calc.empty and 'mes' in df_calc.columns:
         df_mes = df_calc[df_calc['mes'] == mes_sel]
-        gastos_mec = df_mes['mec_cost'].sum() if 'mec_cost' in df_mes.columns else 0
-        gastos_com = df_mes['com_cost'].sum() if 'com_cost' in df_mes.columns else 0
-    else:
-        gastos_mec = 0
-        gastos_com = 0
         
+        # Si eligió una unidad, filtramos solo los gastos de ese bus
+        if tipo_cierre == "Por Unidad" and bus_sel and bus_sel != "Sin Unidades":
+            df_mes = df_mes[df_mes['bus'] == bus_sel]
+            
+    gastos_mec = df_mes['mec_cost'].sum() if not df_mes.empty and 'mec_cost' in df_mes.columns else 0
+    gastos_com = df_mes['com_cost'].sum() if not df_mes.empty and 'com_cost' in df_mes.columns else 0
     gastos_taller_app = gastos_mec + gastos_com
     
-    # 4. Formulario de Ingresos y Pagos
+    # 4. FORMULARIO DE INGRESOS Y PAGOS
     st.subheader("💰 Balance Operativo")
     with st.form("cierre_caja_form"):
+        # El título cambia dinámicamente según lo que elegiste
+        titulo_ingreso = f"📈 Ingresos Brutos ({'de la Flota' if tipo_cierre == 'Toda la Flota' else f'del Bus {bus_sel}'}) ($)"
+        
         c1, c2, c3 = st.columns(3)
-        ingresos = c1.number_input("📈 Ingresos Brutos del Mes ($)", min_value=0.0, step=100.0, help="Todo el dinero que hizo la unidad.")
-        pago_chofer = c2.number_input("🧑‍✈️ Sueldo/Pago Conductor ($)", min_value=0.0, step=50.0, help="Lo que le pagaste al chofer este mes.")
-        otros_gastos = c3.number_input("📝 Otros Gastos (Peajes, multas) ($)", min_value=0.0, step=10.0)
+        ingresos = c1.number_input(titulo_ingreso, min_value=0.0, step=100.0)
+        pago_chofer = c2.number_input("🧑‍✈️ Sueldo/Pago Conductores ($)", min_value=0.0, step=50.0)
+        otros_gastos = c3.number_input("📝 Otros Gastos (Peajes, etc) ($)", min_value=0.0, step=10.0)
         
         st.markdown("---")
-        st.write("🔧 **Gastos extraídos automáticamente de la App este mes:**")
+        alcance_texto = "la Flota completa" if tipo_cierre == "Toda la Flota" else f"el Bus {bus_sel}"
+        st.write(f"🔧 **Gastos de Taller cruzados automáticamente para {alcance_texto} en {mes_sel}:**")
+        
         col_g1, col_g2, col_g3 = st.columns(3)
         col_g1.metric("Mano de Obra (Mecánicos)", f"${gastos_mec:,.2f}")
         col_g2.metric("Repuestos (Comercios)", f"${gastos_com:,.2f}")
-        col_g3.metric("Total Gastos de Taller", f"${gastos_taller_app:,.2f}")
+        col_g3.metric("Total Gastos Taller", f"${gastos_taller_app:,.2f}")
         
         calcular = st.form_submit_button("🧮 CALCULAR RENTABILIDAD", type="primary", use_container_width=True)
         
         if calcular:
-            # Cálculos financieros
             total_egresos = pago_chofer + otros_gastos + gastos_taller_app
             utilidad = ingresos - total_egresos
             margen = (utilidad / ingresos) * 100 if ingresos > 0 else 0
             
-            st.markdown("### 📊 Resultado Financiero del Mes")
+            st.markdown("### 📊 Resultado Financiero")
             
             if utilidad > 0:
                 st.success(f"## 🎉 GANANCIA NETA: ${utilidad:,.2f}")
-                st.balloons() # ¡Animación de celebración si hay ganancias!
+                st.balloons()
             elif utilidad < 0:
                 st.error(f"## 🚨 PÉRDIDA NETA: ${utilidad:,.2f}")
             else:
