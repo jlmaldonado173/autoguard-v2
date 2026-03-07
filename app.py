@@ -1615,14 +1615,12 @@ def render_ai_chat(df, user):
                 st.error(f"Hubo un error al conectar con el cerebro de IA Itero: {e}")
 def render_cierre_caja(df, user):
     st.header("💵 Cierre de Caja y Rentabilidad")
-    st.caption("Evalúa si tu negocio es rentable. Calcula los márgenes de toda la flota o de una unidad específica.")
+    st.caption("Evalúa y guarda la rentabilidad de tu flota. Todo quedará registrado en el historial.")
     
-    # 1. GENERAR MESES SIEMPRE (Haya o no haya datos)
+    # 1. GENERAR MESES SIEMPRE
     mes_actual = datetime.now().strftime('%Y-%m')
-    
-    # Creamos una lista obligatoria con los últimos 12 meses
     meses_base = pd.date_range(end=pd.Timestamp.now(), periods=12, freq='MS').strftime('%Y-%m').tolist()
-    meses_base.reverse() # Ordenamos para que el mes más reciente esté primero
+    meses_base.reverse()
     
     if not df.empty and 'date' in df.columns:
         df_calc = df.copy()
@@ -1633,32 +1631,28 @@ def render_cierre_caja(df, user):
         df_calc = pd.DataFrame()
         meses_db = []
         
-    # Unimos los meses generados con los históricos y quitamos duplicados
     meses_disp = list(dict.fromkeys(meses_base + meses_db))
     if mes_actual not in meses_disp:
         meses_disp.insert(0, mes_actual)
         
-    # 2. SELECTORES DE MES Y ALCANCE (Flota vs Unidad)
+    # 2. SELECTORES DE MES Y ALCANCE
     c_top1, c_top2 = st.columns(2)
     mes_sel = c_top1.selectbox("📅 Mes a Evaluar", meses_disp, key="cierre_mes_sel")
     tipo_cierre = c_top2.radio("🎯 Alcance del Cierre", ["Toda la Flota", "Por Unidad"], horizontal=True)
     
-    bus_sel = None
+    bus_sel = "N/A"
     if tipo_cierre == "Por Unidad":
         if not df.empty and 'bus' in df.columns:
             buses_disponibles = sorted(list(df['bus'].dropna().unique()))
         else:
             buses_disponibles = ["Sin Unidades"]
             
-        # Agregamos un KEY único para evitar el error de Streamlit
         bus_sel = st.selectbox("🚌 Selecciona la Unidad", buses_disponibles, key="cierre_bus_sel_caja")
 
-    # 3. EXTRAER GASTOS SEGÚN LO SELECCIONADO (Flota o Unidad)
+    # 3. EXTRAER GASTOS
     df_mes = pd.DataFrame()
     if not df_calc.empty and 'mes' in df_calc.columns:
         df_mes = df_calc[df_calc['mes'] == mes_sel]
-        
-        # Si eligió una unidad, filtramos solo los gastos de ese bus
         if tipo_cierre == "Por Unidad" and bus_sel and bus_sel != "Sin Unidades":
             df_mes = df_mes[df_mes['bus'] == bus_sel]
             
@@ -1666,10 +1660,9 @@ def render_cierre_caja(df, user):
     gastos_com = df_mes['com_cost'].sum() if not df_mes.empty and 'com_cost' in df_mes.columns else 0
     gastos_taller_app = gastos_mec + gastos_com
     
-    # 4. FORMULARIO DE INGRESOS Y PAGOS
+    # 4. FORMULARIO Y GUARDADO
     st.subheader("💰 Balance Operativo")
-    with st.form("cierre_caja_form"):
-        # El título cambia dinámicamente según lo que elegiste
+    with st.form("cierre_caja_form", clear_on_submit=False):
         titulo_ingreso = f"📈 Ingresos Brutos ({'de la Flota' if tipo_cierre == 'Toda la Flota' else f'del Bus {bus_sel}'}) ($)"
         
         c1, c2, c3 = st.columns(3)
@@ -1678,35 +1671,75 @@ def render_cierre_caja(df, user):
         otros_gastos = c3.number_input("📝 Otros Gastos (Peajes, etc) ($)", min_value=0.0, step=10.0)
         
         st.markdown("---")
-        alcance_texto = "la Flota completa" if tipo_cierre == "Toda la Flota" else f"el Bus {bus_sel}"
-        st.write(f"🔧 **Gastos de Taller cruzados automáticamente para {alcance_texto} en {mes_sel}:**")
+        st.write(f"🔧 **Gastos de Taller en {mes_sel}:** Mano de Obra (${gastos_mec:,.2f}) + Repuestos (${gastos_com:,.2f}) = **${gastos_taller_app:,.2f}**")
         
-        col_g1, col_g2, col_g3 = st.columns(3)
-        col_g1.metric("Mano de Obra (Mecánicos)", f"${gastos_mec:,.2f}")
-        col_g2.metric("Repuestos (Comercios)", f"${gastos_com:,.2f}")
-        col_g3.metric("Total Gastos Taller", f"${gastos_taller_app:,.2f}")
+        # BOTÓN DE GUARDADO
+        guardar_cierre = st.form_submit_button("💾 CALCULAR Y GUARDAR REGISTRO", type="primary", use_container_width=True)
         
-        calcular = st.form_submit_button("🧮 CALCULAR RENTABILIDAD", type="primary", use_container_width=True)
-        
-        if calcular:
+        if guardar_cierre:
             total_egresos = pago_chofer + otros_gastos + gastos_taller_app
             utilidad = ingresos - total_egresos
             margen = (utilidad / ingresos) * 100 if ingresos > 0 else 0
             
-            st.markdown("### 📊 Resultado Financiero")
+            # --- MAGIA: GUARDAR EN LA BASE DE DATOS ---
+            REFS["data"].collection("financial_closures").add({
+                "fleetId": user['fleet'],
+                "month": mes_sel,
+                "scope": tipo_cierre,
+                "bus": bus_sel if tipo_cierre == "Por Unidad" else "Todos",
+                "income": ingresos,
+                "driver_pay": pago_chofer,
+                "other_expenses": otros_gastos,
+                "taller_expenses": gastos_taller_app,
+                "total_expenses": total_egresos,
+                "profit": utilidad,
+                "margin_percent": margen,
+                "saved_at": datetime.now().isoformat(),
+                "saved_by": user['name']
+            })
+            
+            # --- MOSTRAR RESULTADOS ---
+            st.success("✅ ¡Cierre financiero guardado exitosamente en el historial!")
             
             if utilidad > 0:
-                st.success(f"## 🎉 GANANCIA NETA: ${utilidad:,.2f}")
+                st.info(f"🎉 **GANANCIA NETA:** ${utilidad:,.2f} (Margen: {margen:.1f}%)")
                 st.balloons()
             elif utilidad < 0:
-                st.error(f"## 🚨 PÉRDIDA NETA: ${utilidad:,.2f}")
+                st.error(f"🚨 **PÉRDIDA NETA:** ${utilidad:,.2f} (Margen: {margen:.1f}%)")
             else:
-                st.info(f"## ⚖️ PUNTO DE EQUILIBRIO: $0.00")
+                st.warning(f"⚖️ **PUNTO DE EQUILIBRIO:** $0.00")
                 
-            c_res1, c_res2, c_res3 = st.columns(3)
-            c_res1.metric("Total Ingresos", f"${ingresos:,.2f}")
-            c_res2.metric("Total Egresos (Gastos + Sueldo)", f"${total_egresos:,.2f}")
-            c_res3.metric("Margen de Ganancia", f"{margen:.1f}%")
+            time.sleep(1.5)
+            st.rerun() # Recargamos para que aparezca en la tabla de abajo
+
+    # 5. TABLA DE HISTORIAL DE CIERRES
+    st.markdown("---")
+    st.subheader("📂 Historial de Cierres Guardados")
+    
+    # Consultamos la base de datos
+    closures_ref = REFS["data"].collection("financial_closures").where("fleetId", "==", user['fleet']).stream()
+    closures_list = [{"id": c.id, **c.to_dict()} for c in closures_ref]
+    
+    if closures_list:
+        df_closures = pd.DataFrame(closures_list)
+        # Ordenar de más reciente a más antiguo
+        df_closures = df_closures.sort_values(by="saved_at", ascending=False)
+        
+        # Limpiar y formatear la tabla para que se vea profesional
+        df_mostrar = pd.DataFrame({
+            "📅 Mes": df_closures["month"],
+            "🎯 Alcance": df_closures["scope"],
+            "🚌 Unidad": df_closures["bus"],
+            "📈 Ingresos": df_closures["income"].apply(lambda x: f"${x:,.2f}"),
+            "📉 Egresos": df_closures["total_expenses"].apply(lambda x: f"${x:,.2f}"),
+            "💵 Utilidad": df_closures["profit"].apply(lambda x: f"${x:,.2f}"),
+            "📊 Margen": df_closures["margin_percent"].apply(lambda x: f"{x:.1f}%"),
+            "👤 Registrado por": df_closures["saved_by"]
+        })
+        
+        st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
+    else:
+        st.info("Aún no tienes cierres de caja guardados. Llena el formulario de arriba para guardar tu primer registro.")
             
 def main():
     if 'user' not in st.session_state:
