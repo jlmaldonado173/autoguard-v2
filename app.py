@@ -614,7 +614,7 @@ def render_communications(user):
                         "sender": f"{user['name']} ({user['role'].upper()})",
                         "target_role": roles[destino],
                         "message": mensaje,
-                        "date": get_current_time(),
+                        "date": datetime.now().isoformat(), # <--- ¡AQUÍ ESTÁ LA CORRECCIÓN!
                         "status": "unread"
                     })
                     st.success(f"✅ Notificación enviada al buzón de los {destino}.")
