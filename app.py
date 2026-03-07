@@ -1489,9 +1489,6 @@ def render_mechanic_work(user, df, providers):
                 st.rerun()
                 
 def render_ai_chat(df, user):
-    def render_ai_chat(df, user):
-    # --- 1. EL NUEVO LOGO SVG Y TÍTULO DE "IA ITERO" ---
-    # Fíjate que el texto de abajo NO tiene espacios a la izquierda. ¡Déjalo así!
     html_header = """
 <div style="display:flex; align-items:center; gap:18px; margin-bottom: 5px; padding-bottom: 15px; border-bottom: 1px solid #333333;">
 <svg width="50" height="50" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
@@ -1519,66 +1516,6 @@ def render_ai_chat(df, user):
 <p style="color:#AAAAAA; font-size: 15px; margin-bottom: 25px; margin-top: 15px;">Bienvenido al centro de inteligencia de tu flota. Pregúntame sobre mantenimientos, gastos o predicciones de tus unidades.</p>
 """
     st.markdown(html_header, unsafe_allow_html=True)
-
-    if not HAS_AI:
-        st.error("⚠️ La Inteligencia Artificial no está configurada. Revisa tus Secrets en Streamlit.")
-        return
-        
-    # ... (AQUÍ SIGUE EL RESTO DE TU CÓDIGO NORMAL DEL CHAT) ...def render_ai_chat(df, user):
-    # --- 1. EL NUEVO LOGO SVG Y TÍTULO DE "IA ITERO" ---
-    # Fíjate que el texto de abajo NO tiene espacios a la izquierda. ¡Déjalo así!
-    html_header = """
-<div style="display:flex; align-items:center; gap:18px; margin-bottom: 5px; padding-bottom: 15px; border-bottom: 1px solid #333333;">
-<svg width="50" height="50" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-<defs>
-<linearGradient id="itero-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-<stop offset="0%" stop-color="#00C6FF" />
-<stop offset="100%" stop-color="#0072FF" />
-</linearGradient>
-<linearGradient id="sparkle-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-<stop offset="0%" stop-color="#A0FEFE" />
-<stop offset="100%" stop-color="#C3cfe2" />
-</linearGradient>
-</defs>
-<path d="M50 10 A40 40 0 1 1 49.9 10 Z" fill="none" stroke="url(#itero-gradient)" stroke-width="2" stroke-dasharray="6 6" opacity="0.3"/>
-<path d="M42 35 V65 M50 25 V75 M58 35 V65" stroke="url(#itero-gradient)" stroke-width="6" stroke-linecap="round" fill="none"/>
-<path d="M70 50 A20 20 0 1 1 50 30 A20 20 0 0 1 65 35" stroke="url(#itero-gradient)" stroke-width="4" stroke-linecap="round" fill="none"/>
-<path d="M62 38 L65 35 L62 32" stroke="url(#itero-gradient)" stroke-width="4" stroke-linecap="round" fill="none"/>
-<path d="M50 42 C50 42 52 48 58 50 C52 52 50 58 50 58 C50 58 48 52 42 50 C48 48 50 42 50 42Z" fill="url(#sparkle-gradient)"/>
-</svg>
-<div>
-<h1 style="margin:0; font-size: 38px; background: -webkit-linear-gradient(45deg, #00C6FF, #0072FF); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 900; letter-spacing: -1px;">IA Itero</h1>
-<p style="color:#28a745; font-size: 12px; margin:0; font-weight:bold; text-transform:uppercase; letter-spacing:1px;">Asistente de Flota Inteligente</p>
-</div>
-</div>
-<p style="color:#AAAAAA; font-size: 15px; margin-bottom: 25px; margin-top: 15px;">Bienvenido al centro de inteligencia de tu flota. Pregúntame sobre mantenimientos, gastos o predicciones de tus unidades.</p>
-"""
-    st.markdown(html_header, unsafe_allow_html=True)
-
-    if not HAS_AI:
-        st.error("⚠️ La Inteligencia Artificial no está configurada. Revisa tus Secrets en Streamlit.")
-        return
-        
-    # ... (AQUÍ SIGUE EL RESTO DE TU CÓDIGO NORMAL DEL CHAT) ...
-        </defs>
-        <path d="M50 10 A40 40 0 1 1 49.9 10 Z" fill="none" stroke="url(#itero-gradient)" stroke-width="2" stroke-dasharray="6 6" opacity="0.3"/>
-        <path d="M42 35 V65 M50 25 V75 M58 35 V65" stroke="url(#itero-gradient)" stroke-width="6" stroke-linecap="round" fill="none"/>
-        <path d="M70 50 A20 20 0 1 1 50 30 A20 20 0 0 1 65 35" stroke="url(#itero-gradient)" stroke-width="4" stroke-linecap="round" fill="none"/>
-        <path d="M62 38 L65 35 L62 32" stroke="url(#itero-gradient)" stroke-width="4" stroke-linecap="round" fill="none"/>
-        <path d="M50 42 C50 42 52 48 58 50 C52 52 50 58 50 58 C50 58 48 52 42 50 C48 48 50 42 50 42Z" fill="url(#sparkle-gradient)"/>
-    </svg>
-    """
-    
-    st.markdown(f"""
-        <div style="display:flex; align-items:center; gap:18px; margin-bottom: 5px; padding-bottom: 15px; border-bottom: 1px solid #333333;">
-            {itero_ai_svg}
-            <div>
-                <h1 style="margin:0; font-size: 38px; background: -webkit-linear-gradient(45deg, #00C6FF, #0072FF); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 900; letter-spacing: -1px;">IA Itero</h1>
-                <p style="color:#28a745; font-size: 12px; margin:0; font-weight:bold; text-transform:uppercase; letter-spacing:1px;">Asistente de Flota Inteligente</p>
-            </div>
-        </div>
-        <p style="color:#AAAAAA; font-size: 15px; margin-bottom: 25px; margin-top: 15px;">Bienvenido al centro de inteligencia de tu flota. Pregúntame sobre mantenimientos, gastos o predicciones de tus unidades.</p>
-    """, unsafe_allow_html=True)
 
     if not HAS_AI:
         st.error("⚠️ La Inteligencia Artificial no está configurada. Revisa tus Secrets en Streamlit.")
@@ -1590,7 +1527,6 @@ def render_ai_chat(df, user):
 
     # Mostrar los mensajes anteriores (Usando avatares personalizados)
     for message in st.session_state.chat_history:
-        # El usuario es un humano 🧑‍💻, IA Itero es el destello ✨
         avatar_icono = "🧑‍💻" if message["role"] == "user" else "✨"
         with st.chat_message(message["role"], avatar=avatar_icono):
             st.markdown(message["content"])
