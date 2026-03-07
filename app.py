@@ -624,7 +624,11 @@ def render_communications(user):
                 texto_wa = f"🚨 *AVISO DE ITERO AI*\nHola, te he dejado un nuevo mensaje en el sistema:\n\n_{mensaje}_\n\nIngresa a la app para revisarlo."
                 
                 if roles[destino] == "owner":
-                    link = f"https://wa.me/{format_phone(APP_CONFIG['BOSS_PHONE'])}?text={urllib.parse.quote(texto_wa)}"
+                    # --- AQUÍ ESTÁ LA MAGIA: LEER EL NÚMERO REAL DEL DUEÑO ---
+                    fleet_doc = REFS["fleets"].document(user['fleet']).get()
+                    numero_admin = fleet_doc.to_dict().get("boss_phone", APP_CONFIG['BOSS_PHONE']) if fleet_doc.exists else APP_CONFIG['BOSS_PHONE']
+                    
+                    link = f"https://wa.me/{format_phone(numero_admin)}?text={urllib.parse.quote(texto_wa)}"
                 else:
                     link = f"https://wa.me/?text={urllib.parse.quote(texto_wa)}"
                 
@@ -636,10 +640,6 @@ def render_communications(user):
                 """
                 # Inyectamos el código en la app sin que se vea
                 st.components.v1.html(js_abrir_wa, height=0)
-                
-                # NOTA: Quitamos el st.rerun() temporalmente para darle tiempo
-                # al navegador de ejecutar el script y abrir WhatsApp.
-                # Como el formulario tiene 'clear_on_submit=True', se limpiará solo.
                 
             else:
                 st.error("❌ Por favor, escribe un mensaje.")
