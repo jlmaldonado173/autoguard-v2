@@ -1489,27 +1489,37 @@ def render_mechanic_work(user, df, providers):
                 st.rerun()
                 
 def render_ai_chat(df, user):
-    # --- 1. EL LOGO SVG Y TÍTULO DE GEMINI ---
-    gemini_svg = """
-    <svg width="45" height="45" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    # --- 1. EL NUEVO LOGO SVG Y TÍTULO DE "IA ITERO" ---
+    # Este SVG es una "I" estilizada con un ciclo (iteración) y un destello de IA
+    itero_ai_svg = """
+    <svg width="50" height="50" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
         <defs>
-            <linearGradient id="gemini-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#4285F4" />
-                <stop offset="50%" stop-color="#9B72CB" />
-                <stop offset="100%" stop-color="#D96570" />
+            <linearGradient id="itero-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#00C6FF" />
+                <stop offset="100%" stop-color="#0072FF" />
+            </linearGradient>
+            <linearGradient id="sparkle-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#A0FEFE" />
+                <stop offset="100%" stop-color="#C3cfe2" />
             </linearGradient>
         </defs>
-        <path d="M12.0001 2.00013C12.0001 2.00013 14.5882 8.71887 21.0001 10.4357C15.0589 11.8082 12.0001 22.0001 12.0001 22.0001C12.0001 22.0001 8.94129 11.8082 3.00012 10.4357C9.41201 8.71887 12.0001 2.00013 12.0001 2.00013Z" fill="url(#gemini-gradient)"/>
-        <path d="M19 14C19 14 19.8627 16.2396 22 16.8119C20.0196 17.2694 19 20.6667 19 20.6667C19 20.6667 17.9804 17.2694 16 16.8119C18.1373 16.2396 19 14 19 14Z" fill="url(#gemini-gradient)"/>
+        <path d="M50 10 A40 40 0 1 1 49.9 10 Z" fill="none" stroke="url(#itero-gradient)" stroke-width="2" stroke-dasharray="6 6" opacity="0.3"/>
+        <path d="M42 35 V65 M50 25 V75 M58 35 V65" stroke="url(#itero-gradient)" stroke-width="6" stroke-linecap="round" fill="none"/>
+        <path d="M70 50 A20 20 0 1 1 50 30 A20 20 0 0 1 65 35" stroke="url(#itero-gradient)" stroke-width="4" stroke-linecap="round" fill="none"/>
+        <path d="M62 38 L65 35 L62 32" stroke="url(#itero-gradient)" stroke-width="4" stroke-linecap="round" fill="none"/>
+        <path d="M50 42 C50 42 52 48 58 50 C52 52 50 58 50 58 C50 58 48 52 42 50 C48 48 50 42 50 42Z" fill="url(#sparkle-gradient)"/>
     </svg>
     """
     
     st.markdown(f"""
-        <div style="display:flex; align-items:center; gap:15px; margin-bottom: 5px; padding-bottom: 15px; border-bottom: 1px solid #333333;">
-            {gemini_svg}
-            <h1 style="margin:0; font-size: 36px; background: -webkit-linear-gradient(45deg, #4285F4, #9B72CB, #D96570); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 800;">Asistente Inteligente</h1>
+        <div style="display:flex; align-items:center; gap:18px; margin-bottom: 5px; padding-bottom: 15px; border-bottom: 1px solid #333333;">
+            {itero_ai_svg}
+            <div>
+                <h1 style="margin:0; font-size: 38px; background: -webkit-linear-gradient(45deg, #00C6FF, #0072FF); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 900; letter-spacing: -1px;">IA Itero</h1>
+                <p style="color:#28a745; font-size: 12px; margin:0; font-weight:bold; text-transform:uppercase; letter-spacing:1px;">Asistente de Flota Inteligente</p>
+            </div>
         </div>
-        <p style="color:#AAAAAA; font-size: 15px; margin-bottom: 25px; margin-top: 10px;">Pregúntame sobre mantenimientos, gastos, historiales y predicciones de tus unidades.</p>
+        <p style="color:#AAAAAA; font-size: 15px; margin-bottom: 25px; margin-top: 15px;">Bienvenido al centro de inteligencia de tu flota. Pregúntame sobre mantenimientos, gastos o predicciones de tus unidades.</p>
     """, unsafe_allow_html=True)
 
     if not HAS_AI:
@@ -1522,7 +1532,7 @@ def render_ai_chat(df, user):
 
     # Mostrar los mensajes anteriores (Usando avatares personalizados)
     for message in st.session_state.chat_history:
-        # El usuario es un humano 🧑‍💻, la IA es el destello de Gemini ✨
+        # El usuario es un humano 🧑‍💻, IA Itero es el destello ✨
         avatar_icono = "🧑‍💻" if message["role"] == "user" else "✨"
         with st.chat_message(message["role"], avatar=avatar_icono):
             st.markdown(message["content"])
@@ -1534,8 +1544,8 @@ def render_ai_chat(df, user):
             st.markdown(prompt)
         st.session_state.chat_history.append({"role": "user", "content": prompt})
 
-        # --- 4. PROCESAMIENTO CON LA IA ---
-        with st.spinner("Buscando en los registros de Itero AI..."):
+        # --- 4. PROCESAMIENTO CON GEMINI (PERO COMO IA ITERO) ---
+        with st.spinner("IA Itero está analizando tus datos..."):
             try:
                 model = get_ai_model()
                 
@@ -1544,7 +1554,7 @@ def render_ai_chat(df, user):
                 ai_rules = fleet_doc.to_dict().get("ai_rules", "") if fleet_doc.exists else ""
                 
                 # B. Construir un resumen exacto del estado de los buses
-                contexto_datos = "ESTADO ACTUAL DE LOS MANTENIMIENTOS:\n"
+                contexto_datos = "ESTADO ACTUAL DE LOS MANTENIMIENTOS DE LA FLOTA:\n"
                 if not df.empty:
                     df['total_cost'] = df.get('mec_cost', 0) + df.get('com_cost', 0)
                     km_reales = df.groupby('bus')['km_current'].max().to_dict()
@@ -1563,43 +1573,44 @@ def render_ai_chat(df, user):
                             
                         contexto_datos += f"- Bus {b} | {c}: KM Actual ({km_act:,.0f}). Meta Programada ({km_meta:,.0f}). Estado: {estado}.\n"
                         
-                    # Agregamos las observaciones para que la IA sepa "qué pasó"
                     logs_recientes = df[['date', 'bus', 'category', 'total_cost', 'observations']].head(20).to_string()
                 else:
                     logs_recientes = "No hay registros."
 
-                # C. Enviar todo al cerebro de Gemini
+                # C. Enviar todo al cerebro de la IA (Gemini) con nueva identidad
                 sys_prompt = f"""
-                Eres Gemini, el Asistente Experto en Gestión Automotriz de la flota ITERO. 
+                Eres "IA Itero", el Asistente Inteligente oficial de la flota ITERO TITANIUM.
+                Tu identidad es la de un experto en gestión automotriz, análisis de datos y predicción de mantenimientos.
+                
                 El usuario '{user['name']}' (Rol: {user['role']}) te hace una pregunta.
                 
-                REGLAS Y MANUAL DE LA EMPRESA:
+                REGLAS Y MANUAL ESPECÍFICO DE ESTA EMPRESA:
                 {ai_rules}
                 
                 {contexto_datos}
                 
-                ÚLTIMOS TRABAJOS REGISTRADOS:
+                ÚLTIMOS TRABAJOS REGISTRADOS EN LA BITÁCORA:
                 {logs_recientes}
                 
                 Pregunta del usuario: {prompt}
                 
-                INSTRUCCIONES DE IDENTIDAD Y RESPUESTA:
-                1. Eres una IA inteligente, amistosa y muy analítica.
-                2. Si el usuario te pregunta por kilómetros faltantes, busca en la tabla "ESTADO ACTUAL" y da la respuesta exacta. 
-                3. Usa negritas (**) para resaltar números importantes, costos y nombres de piezas.
-                4. Usa listas si tienes que darle varias recomendaciones.
-                5. No muestres código ni parezcas un robot leyendo una tabla; exprésalo como un humano experto.
+                INSTRUCCIONES DE RESPUESTA:
+                1. Responde de forma natural, amistosa y muy profesional.
+                2. Usa negritas (**) para resaltar números clave, costos y nombres de piezas.
+                3. Usa listas si tienes que dar varias recomendaciones o pasos.
+                4. Haz cálculos exactos basados en los datos que te pasé.
+                5. Al final de respuestas complejas, puedes usar una frase como "Enviado por IA Itero".
                 """
                 
                 response = model.generate_content(sys_prompt)
                 
-                # Mostrar respuesta de Gemini
+                # Mostrar respuesta de IA Itero
                 with st.chat_message("assistant", avatar="✨"):
                     st.markdown(response.text)
                 st.session_state.chat_history.append({"role": "assistant", "content": response.text})
                 
             except Exception as e:
-                st.error(f"Hubo un error de conexión con la IA: {e}")
+                st.error(f"Hubo un error al conectar con el cerebro de IA Itero: {e}")
 def main():
     if 'user' not in st.session_state:
         ui_render_login()
