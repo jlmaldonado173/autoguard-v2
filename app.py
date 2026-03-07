@@ -1054,16 +1054,17 @@ def render_workshop(user, providers):
     foto_archivo = st.camera_input("Capturar evidencia", key=f"cam_{user.get('bus', 'default')}")
     
     with st.form("workshop_form_data"):
-        tp = st.radio("Tipo de Mantenimiento", ["Preventivo", "Correctivo"], horizontal=True)
+        tp = st.radio("Tipo", ["Preventivo", "Correctivo"], horizontal=True)
         
         c1, c2 = st.columns(2)
-        cat = c1.selectbox("Categoría", ["Aceite Motor", "Caja", "Corona", "Frenos", "Llantas", "Suspensión", "Eléctrico", "Otro"])
+        # --- AQUÍ EMPIEZA LA MAGIA DE LAS CATEGORÍAS LIBRES ---
+        cat_sel = c1.selectbox("Categoría", ["Aceite Motor", "Caja", "Corona", "Frenos", "Llantas", "Suspensión", "Eléctrico", "Otro (Escribir abajo)"])
+        cat_otro = c1.text_input("Si elegiste 'Otro', especifica aquí (Ej: Refrigerante):")
         
-        # ELIMINAMOS el 'min_value=ka' que rompía el formulario en Streamlit
+        obs = st.text_area("Detalle")
+        
         ka = c1.number_input("KM Actual", min_value=0, step=1)
-        kn = c2.number_input("Próximo (KM Meta)", min_value=0, step=1, help="Se guardará si el tipo es Preventivo.")
-        
-        obs = st.text_area("Detalle del trabajo")
+        kn = c2.number_input("Próximo (KM Meta)", min_value=0, step=1)
         
         st.divider()
         col_m, col_r = st.columns(2)
@@ -1082,8 +1083,13 @@ def render_workshop(user, providers):
             if ka <= 0:
                 st.error("❌ ERROR: El kilometraje debe ser mayor a 0.")
             else:
-                # 💡 AQUÍ ESTÁ LA MAGIA: Calculamos el KM final justo AL GUARDAR
                 final_kn = kn if tp == "Preventivo" else 0
+                
+                # Definimos el nombre final de la categoría limpiando espacios y poniendo Mayúsculas iniciales
+                if cat_sel == "Otro (Escribir abajo)" and cat_otro.strip() != "":
+                    cat_final = cat_otro.strip().title()
+                else:
+                    cat_final = cat_sel.replace(" (Escribir abajo)", "")
                 
                 base64_photo = ""
                 if foto_archivo:
@@ -1093,10 +1099,10 @@ def render_workshop(user, providers):
                     "fleetId": user['fleet'],
                     "bus": user['bus'],
                     "date": fecha_registro,
-                    "category": cat,
+                    "category": cat_final, # <-- Guardamos la nueva categoría dinámica
                     "observations": obs,
                     "km_current": ka,
-                    "km_next": final_kn,  # <--- GUARDAMOS LA VARIABLE CORRECTA
+                    "km_next": final_kn,
                     "mec_name": mn,
                     "mec_cost": mc,
                     "mec_paid": mp,
@@ -1409,7 +1415,6 @@ def render_mechanic_work(user, df, providers):
     
     bus_id = st.selectbox("🚛 Seleccionar Unidad a Reparar", buses_disponibles)
     
-    # Mostrar último KM para ayudar al mecánico
     bus_df = df[df['bus'] == bus_id] if not df.empty and 'bus' in df.columns else pd.DataFrame()
     last_km = int(bus_df['km_current'].max()) if not bus_df.empty and 'km_current' in bus_df.columns else 0
     
@@ -1418,17 +1423,17 @@ def render_mechanic_work(user, df, providers):
     coms = [p['name'] for p in providers if p['type'] == "Comercio"]
     
     with st.form("mechanic_log"):
-        cat = st.selectbox("Categoría del Daño", ["Mecánica", "Eléctrica", "Frenos", "Suspensión", "Motor", "Llantas", "Otro"])
+        # --- NUEVA LÓGICA DE CATEGORÍA ---
+        cat_sel = st.selectbox("Categoría del Daño", ["Mecánica", "Eléctrica", "Frenos", "Suspensión", "Motor", "Llantas", "Otro (Escribir abajo)"])
+        cat_otro = st.text_input("Si elegiste 'Otro', especifica la pieza o sistema (Ej: Válvulas):")
+        
         obs = st.text_area("Informe Técnico", placeholder="Describa el daño encontrado y la solución...")
         
-        # --- SOLUCIÓN: Los campos siempre visibles ---
         st.divider()
         st.write("⏱️ **Control de Kilometraje y Alertas**")
         c_km1, c_km2 = st.columns(2)
         
         km_actual = c_km1.number_input("Kilometraje Actual del Bus", min_value=0, value=last_km, step=100)
-        
-        # El campo de aviso aparece siempre. Si no hay aviso, el mecánico lo deja en 0.
         km_proximo = c_km2.number_input("Avisar próximo a los (KM)", min_value=0, value=0, step=500, help="Ingresa a qué KM el radar se pondrá rojo. Deja en 0 si es un arreglo que no necesita aviso futuro.")
         
         st.divider()
@@ -1447,6 +1452,12 @@ def render_mechanic_work(user, df, providers):
             elif km_actual <= 0:
                 st.error("❌ El kilometraje actual debe ser mayor a 0.")
             else:
+                # Definimos el nombre final de la categoría
+                if cat_sel == "Otro (Escribir abajo)" and cat_otro.strip() != "":
+                    cat_final = cat_otro.strip().title()
+                else:
+                    cat_final = cat_sel.replace(" (Escribir abajo)", "")
+                
                 bytes_data = foto.getvalue()
                 b64 = base64.b64encode(bytes_data).decode()
                 
@@ -1454,10 +1465,10 @@ def render_mechanic_work(user, df, providers):
                     "fleetId": user['fleet'],
                     "bus": bus_id,
                     "date": datetime.now().isoformat(),
-                    "category": cat,
+                    "category": cat_final, # <-- Guardamos la nueva categoría dinámica
                     "observations": f"REPORTE MECÁNICO ({user['name']}): {obs}",
-                    "km_current": km_actual,  # <-- KM REAL
-                    "km_next": km_proximo,    # <-- KM DE ALERTA (0 si no hay)
+                    "km_current": km_actual, 
+                    "km_next": km_proximo,    
                     "mec_name": user['name'], 
                     "mec_cost": mo_cost,
                     "mec_paid": 0, 
