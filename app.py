@@ -355,7 +355,7 @@ def render_radar(df, user):
         if not buses_disponibles:
             st.warning("No hay buses registrados aún.")
             return
-        bus_sel = st.selectbox("🎯 Selecciona la Unidad a Escanear:", buses_disponibles)
+        bus_sel = st.selectbox("🎯 Selecciona la Unidad a Escanear:", buses_disponibles, key="radar_bus_selector_unico")
     else:
         bus_sel = user['bus']
         st.subheader(f"🎯 Unidad Asignada: {bus_sel}")
