@@ -378,143 +378,124 @@ def draw_svg_gauge(category, faltan, km_meta, km_actual):
     return svg
     
 def render_radar(df, user):
-    st.header("🏠 Radar de la Unidad (Escáner 360°)")
-    if df.empty:
-        st.info("No hay datos registrados en el historial para mostrar el radar.")
-        return
+    st.header("🏠 Radar de la Flota")
+    
+    # --- EL GUARDIÁN DE KILOMETRAJE PARA CHOFERES ---
+    if user['role'] == 'driver':
+        if not df.empty and 'bus' in df.columns and 'date' in df.columns:
+            df_bus_chk = df[df['bus'] == user.get('bus', '0')]
+            if not df_bus_chk.empty:
+                df_bus_chk['date_obj'] = pd.to_datetime(df_bus_chk['date'])
+                ultima_fecha = df_bus_chk['date_obj'].max()
+                dias_sin_reporte = (datetime.now() - ultima_fecha).days
+                if dias_sin_reporte >= 3: 
+                    st.error(f"🚨 **¡ATENCIÓN!** Llevas **{dias_sin_reporte} días** sin actualizar el kilometraje de la Unidad {user.get('bus', '0')}. Haz un reporte para actualizar el Radar.")
+                elif dias_sin_reporte == 2:
+                    st.warning("⚠️ Recuerda actualizar tu kilometraje pronto.")
+    # ------------------------------------------------
 
-    # 1. Selector de Bus
-    if user['role'] in ['owner', 'mechanic']:
-        buses_disponibles = sorted(df['bus'].unique())
-        if not buses_disponibles:
-            st.warning("No hay buses registrados aún.")
-            return
+    # 1. SELECTOR DE BUS
+    if not df.empty and 'bus' in df.columns:
+        buses_disponibles = sorted(list(df['bus'].dropna().unique()))
         bus_sel = st.selectbox("🎯 Selecciona la Unidad a Escanear:", buses_disponibles, key="radar_bus_selector_unico")
     else:
-        bus_sel = user['bus']
-        st.subheader(f"🎯 Unidad Asignada: {bus_sel}")
-
-    df_bus = df[df['bus'] == bus_sel]
-    if df_bus.empty:
-        st.warning(f"Sin historial de mantenimientos para el bus {bus_sel}.")
+        st.info("No hay datos suficientes para mostrar el radar.")
         return
 
-    # 2. Kilometraje Real
-    km_actual_real = df_bus['km_current'].max()
-    
-    st.markdown(f"""
-        <div style='background-color:#1E1E1E; padding:15px; border-radius:10px; text-align:center; border: 1px solid #4CAF50;'>
-            <h2 style='color:#4CAF50; margin:0;'>🚗 KILOMETRAJE ACTUAL: {km_actual_real:,.0f} km</h2>
-        </div>
-        <br>
-    """, unsafe_allow_html=True)
+    # 2. FILTRAR DATOS DEL BUS SELECCIONADO
+    df_bus = df[df['bus'] == bus_sel].copy()
+    if df_bus.empty or 'km_current' not in df_bus.columns:
+        st.warning("No hay registros de kilometraje para esta unidad.")
+        return
 
-    st.subheader("🛠️ Panel de Control de Sistemas")
+    # OBTENER EL KILOMETRAJE ACTUAL DEL BUS
+    km_actual = df_bus['km_current'].max()
+    st.markdown(f"### 🚌 Bus {bus_sel} | Odómetro Actual: **{km_actual:,.0f} km**")
+    st.markdown("---")
+
+    # 3. CONSEGUIR LOS ÚLTIMOS MANTENIMIENTOS
+    ultimos = df_bus.sort_values('date', ascending=False).drop_duplicates(subset=['category'])
+
+    # DICCIONARIO INTELIGENTE DE INTERVALOS (Si no lo tenemos, lo calculamos)
+    intervalos_standar = {
+        "aceite": 10000,
+        "llanta": 50000,
+        "caja": 40000,
+        "freno": 20000,
+        "grasa": 5000,
+        "filtro": 10000
+    }
+
+    # 4. DIBUJAR LOS RADARES EN 3 COLUMNAS
+    cols = st.columns(3)
+    contador = 0
     
-    # 3. EXTRAER TODAS LAS CATEGORÍAS
-    ultimos_registros = df_bus.sort_values('date', ascending=False).drop_duplicates(subset=['category'])
-    
-    alertas = []
-    for _, r in ultimos_registros.iterrows():
-        cat = r['category']
-        meta = r.get('km_next', 0)
-        
-        if meta > 0:
-            faltan = meta - km_actual_real
-        else:
-            faltan = float('inf') 
+    for _, row in ultimos.iterrows():
+        cat = str(row.get('category', 'Desconocido'))
+        km_meta = row.get('km_next', 0)
+
+        if km_meta > 0:
+            faltan = km_meta - km_actual
             
-        alertas.append({"cat": cat, "faltan": faltan, "meta": meta})
-        
-    # Ordenamos: Vencidos -> Próximos -> Óptimos -> Grises
-    alertas = sorted(alertas, key=lambda x: x['faltan'])
-    
-    # 4. Dibujamos los Relojes y sus BOTONES DE INFO
-    c1, c2, c3 = st.columns(3)
-    columnas = [c1, c2, c3]
-    
-    datos_para_ia = f"El bus {bus_sel} tiene un kilometraje actual de {km_actual_real:,.0f} km.\n"
-    
-    for i, al in enumerate(alertas):
-        col = columnas[i % 3] 
-        cat = al['cat']
-        faltan = al['faltan']
-        meta = al['meta']
-        
-        with col:
-            # Dibujamos el reloj SVG
-            reloj_svg = draw_svg_gauge(cat, faltan, meta, km_actual_real)
-            st.markdown(reloj_svg, unsafe_allow_html=True)
+            # A. Descifrar el intervalo aproximado para hacer matemática real
+            intervalo = 20000 # Valor por defecto si no sabemos qué pieza es
+            for clave, valor in intervalos_standar.items():
+                if clave.lower() in cat.lower():
+                    intervalo = valor
+                    break
             
-            # --- NUEVO: VENTANA EMERGENTE (POPOVER) DE INFORMACIÓN ---
-            with st.popover(f"🔍 Ver info de {cat}", use_container_width=True):
-                st.markdown(f"**Historial de {cat}**")
-                
-                # Buscamos los últimos 3 registros de esta pieza en este bus
-                historial_cat = df_bus[df_bus['category'] == cat].sort_values('date', ascending=False).head(3)
-                
-                if not historial_cat.empty:
-                    for _, req in historial_cat.iterrows():
-                        f_str = req['date'].strftime('%d/%m/%Y')
-                        
-                        # Mostramos un mini-resumen súper claro
-                        st.caption(f"📅 **{f_str}** | KM Guardado: {req['km_current']:,.0f}")
-                        st.write(f"📝 {req.get('observations', 'Sin observaciones adicionales.')}")
-                        
-                        # Si gastó dinero, se lo mostramos
-                        costo_total = req.get('mec_cost', 0) + req.get('com_cost', 0)
-                        if costo_total > 0:
-                            st.write(f"💵 **Costo Total:** ${costo_total}")
-                            
-                        # Si hay mecánico o comercio, lo detallamos
-                        if req.get('mec_name') and req['mec_name'] != "N/A":
-                            st.caption(f"👨‍🔧 Mecánico: {req['mec_name']}")
-                        if req.get('com_name') and req['com_name'] != "N/A":
-                            st.caption(f"🛒 Repuestos: {req['com_name']}")
-                            
-                        st.divider() # Línea separadora entre mantenimientos
-                else:
-                    st.info("No hay registros detallados para mostrar.")
+            # B. Calcular Porcentaje de Desgaste (0% Nuevo -> 100% Vencido)
+            desgaste_km = intervalo - faltan
+            porcentaje = int((desgaste_km / intervalo) * 100)
             
-            # Espaciado para que se vea limpio
-            st.write("") 
+            # Limitamos para que no se pase de 100% ni sea menor a 0% visualmente
+            porcentaje_visual = max(0, min(100, porcentaje))
             
-            # Recopilamos info para la IA (Igual que antes)
-            if meta <= 0:
-                datos_para_ia += f"- {cat}: No tiene meta de cambio programada.\n"
-            elif faltan < 0:
-                datos_para_ia += f"- {cat}: VENCIDO por {abs(faltan):,.0f} km.\n"
-            elif faltan <= 1500:
-                datos_para_ia += f"- {cat}: Próximo, faltan {faltan:,.0f} km.\n"
+            # C. Lógica de Colores Semáforo
+            if faltan <= 0:
+                color = "#dc3545" # Rojo
+                estado = "VENCIDO"
+                porcentaje_visual = 100
+            elif porcentaje_visual < 70:
+                color = "#28a745" # Verde
+                estado = "ÓPTIMO"
+            elif porcentaje_visual < 90:
+                color = "#ffc107" # Amarillo
+                estado = "PREVENTIVO"
             else:
-                datos_para_ia += f"- {cat}: Óptimo, faltan {faltan:,.0f} km.\n"
+                color = "#dc3545" # Rojo
+                estado = "CRÍTICO"
 
-    # 5. DIAGNÓSTICO IA
-    st.divider()
-    st.subheader("🧠 Asesor de Taller IA")
-    if st.button("🔍 Generar Diagnóstico con IA", type="primary", use_container_width=True):
-        if not HAS_AI: 
-            st.error("⚠️ La Inteligencia Artificial no está configurada. Revisa tus Secrets en Streamlit.")
-        else:
-            with st.spinner("Analizando desgastes y cruzando datos del radar..."):
-                try:
-                    model = get_ai_model()
-                    if model:
-                        prompt = f"""
-                        Eres el Jefe de Taller Automotriz experto. Analiza este radar 360 del bus:
-                        {datos_para_ia}
-                        
-                        Redacta en 3 partes:
-                        1. 🚨 **Urgente:** Qué debe detenerse o revisarse hoy mismo.
-                        2. ⚠️ **Prevención:** A qué prestar atención esta semana.
-                        3. 💡 **Consejo:** Un tip sobre los sistemas "sin meta programada" si los hay.
-                        """
-                        response = model.generate_content(prompt)
-                        st.info(response.text)
-                    else:
-                        st.error("❌ No se pudo cargar el modelo de IA.")
-                except Exception as e:
-                    st.error("❌ Error de conexión con Google Gemini.")
+            # D. Código SVG Elegante (Oscuro, número al centro)
+            radio = 40
+            circunferencia = 2 * 3.14159 * radio
+            dashoffset = circunferencia - (porcentaje_visual / 100) * circunferencia
+            
+            texto_faltan = f"Faltan: {faltan:,.0f} km" if faltan > 0 else f"Vencido por: {abs(faltan):,.0f} km"
+
+            svg = f"""
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: #1E2129; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
+                <h4 style="color: white; font-size: 13px; text-transform: uppercase; margin-top: 0; margin-bottom: 15px; text-align: center; height: 30px;">{cat}</h4>
+                <svg width="120" height="120" viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r="{radio}" fill="none" stroke="#333333" stroke-width="8" />
+                    <circle cx="50" cy="50" r="{radio}" fill="none" stroke="{color}" stroke-width="8"
+                            stroke-dasharray="{circunferencia}" stroke-dashoffset="{dashoffset}" 
+                            stroke-linecap="round" transform="rotate(-90 50 50)" />
+                    <text x="50" y="45" font-family="Arial" font-size="20" font-weight="bold" fill="white" text-anchor="middle" alignment-baseline="middle">{porcentaje_visual}%</text>
+                    <text x="50" y="65" font-family="Arial" font-size="9" fill="#AAAAAA" text-anchor="middle" alignment-baseline="middle">DESGASTE</text>
+                </svg>
+                <div style="margin-top: 15px; text-align: center;">
+                    <span style="color: {color}; font-weight: 900; font-size: 14px;">{estado}</span><br>
+                    <span style="color: #AAAAAA; font-size: 12px;">{texto_faltan}</span><br>
+                    <span style="color: #666666; font-size: 10px;">Meta: {km_meta:,.0f} km</span>
+                </div>
+            </div>
+            """
+            
+            # Dibujamos en la columna que toque (1, 2 o 3)
+            with cols[contador % 3]:
+                st.markdown(svg, unsafe_allow_html=True)
+            contador += 1
                     
 def render_ai_training(user):
     st.header("🧠 Entrenar Inteligencia Artificial")
