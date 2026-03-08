@@ -289,77 +289,93 @@ def render_super_admin():
             if c3.button("🗑️ ELIMINAR FLOTA", key=f"del_{f.id}"):
                 REFS["fleets"].document(f.id).delete()
                 st.rerun()
-def draw_svg_gauge(categoria, faltan, meta, km_actual_real):
-    """Genera un reloj circular SVG. Maneja casos sin meta (Gris) y calcula porcentajes precisos."""
-    radio = 40
-    circunferencia = 2 * 3.14159 * radio
-    
-    # CASO 1: Mantenimiento sin meta programada
-    if meta <= 0:
-        porcentaje = 0
-        color = "#555555" # Gris oscuro
-        texto_estado = "SIN META"
-        dash_offset = circunferencia # Reloj vacío
-        texto_central = "- %"
-        subtexto = "No programado"
-        
-    # CASO 2: Mantenimiento con meta (Matemática corregida)
+def draw_svg_gauge(category, faltan, km_meta, km_actual):
+    """
+    Dibuja un medidor circular (Gauge) en formato SVG.
+    Muestra el % de DESGASTE de la pieza, no la vida útil restante.
+    0% = Nuevo. 100% = Toca Cambiar.
+    """
+    # 1. CASO: PIEZA SIN META PROGRAMADA (Gris)
+    if km_meta <= 0 or faltan == float('inf'):
+        color = "#AAAAAA" # Gris
+        texto_central = "N/A"
+        texto_inferior = "Sin Programar"
+        dash_array = "0, 100"
     else:
-        # Si faltan < 0, está vencido (0% de vida útil, reloj vacío)
-        if faltan < 0:
-            porcentaje = 0
-            color = "#FF4B4B"  # Rojo
-            texto_estado = "VENCIDO"
-            texto_central = "0%"
+        # --- LA FÓRMULA MATEMÁTICA CORRECTA ---
+        # Si la meta es 600,000 y faltan 5,000... significa que el intervalo de uso total era 
+        # (600,000 - km_actual) + faltan. Pero como no tenemos el KM de instalación original
+        # en esta función, asumimos que "km_meta" representa el kilometraje total del bus 
+        # al momento del cambio, y "faltan" es la distancia literal hasta esa meta.
+        
+        # Para saber el intervalo real de vida de la pieza (ej: un aceite que dura 10,000km), 
+        # necesitamos el KM en el que se instaló. Si no lo tenemos a la mano, 
+        # la mejor aproximación para el desgaste es usar una escala relativa de advertencia.
+        
+        # Como los intervalos varían enormemente (Aceite=10k, Llantas=50k, Motor=500k), 
+        # mostrar un porcentaje sin conocer el intervalo original es engañoso. 
+        # En su lugar, vamos a mostrar LO QUE FALTA directamente en el centro, 
+        # y pintaremos el círculo según un sistema de semáforo de urgencia.
+        
+        # Sistema de Semáforo de Urgencia (basado en kilómetros restantes):
+        if faltan <= 0:
+            porcentaje = 100 # Círculo lleno, rojo
+            color = "#FF4B4B" # Rojo (Vencido)
+            texto_inferior = f"VENCIDO por {abs(int(faltan)):,} km"
+        elif faltan <= 1500:
+            # Si faltan menos de 1500km, llenamos el círculo del 80% al 99%
+            porcentaje = 80 + ((1500 - faltan) / 1500) * 19
+            color = "#FFAA00" # Naranja (Próximo)
+            texto_inferior = f"Faltan {int(faltan):,} km"
+        elif faltan <= 5000:
+            # Si faltan entre 1500km y 5000km, llenamos del 50% al 80%
+            porcentaje = 50 + ((5000 - faltan) / 3500) * 30
+            color = "#FFEA00" # Amarillo (Atención)
+            texto_inferior = f"Faltan {int(faltan):,} km"
         else:
-            # MAGIA MATEMÁTICA: Calculamos cuánto se ha desgastado asumiendo
-            # un intervalo estándar de 15,000 km si no podemos calcular el exacto.
-            # (Lo ideal sería traer el KM de la última vez que se hizo el cambio, 
-            # pero para no alterar tu base de datos, usamos la meta y los faltantes)
-            
-            # Asumimos que el "intervalo de vida útil" es al menos la cantidad de kms faltantes + 1500 (margen)
-            # o el estándar de un cambio grande. 
-            # Para mayor precisión real, hacemos que el porcentaje dependa de un "intervalo deducido".
-            intervalo_deducido = max(faltan * 1.5, 10000) # Evitamos divisiones por cero y damos un intervalo creíble
-            
-            vida_util_restante = (faltan / intervalo_deducido) * 100
-            porcentaje = min(100, max(0, vida_util_restante)) # Aseguramos que quede entre 0 y 100
-            
-            # Colores basados en los KMs reales faltantes (No en el porcentaje, es más seguro)
-            if faltan <= 1500:
-                color = "#ffc107"  # Amarillo
-                texto_estado = "PRÓXIMO"
-                # Si faltan menos de 1500, forzamos el porcentaje a ser bajo (visual de alerta)
-                porcentaje = (faltan / 1500) * 20 # Se llenará máximo al 20%
-            else:
-                color = "#28a745"  # Verde
-                texto_estado = "ÓPTIMO"
-                # Si está óptimo, forzamos a que visualmente se vea saludable (>50%)
-                porcentaje = min(100, 50 + (faltan / 50000) * 50)
-                
-            texto_central = f"{int(porcentaje)}%"
-            
-        dash_offset = circunferencia - (porcentaje / 100) * circunferencia
-        subtexto = f"Faltan: {faltan:,.0f} km"
+            # Si faltan más de 5000km, llenamos del 1% al 50%
+            # (Mientras más falte, más vacío está el círculo)
+            porcentaje = max(1, 50 - (faltan / 20000) * 50)
+            if porcentaje < 1: porcentaje = 1
+            color = "#4CAF50" # Verde (Óptimo)
+            texto_inferior = f"Faltan {int(faltan):,} km"
 
-    # Construcción visual del SVG
-    svg_html = f"""
-    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 15px 10px; background-color: #1E1E1E; border-radius: 15px; border: 1px solid {color}50; box-shadow: 0 6px 15px rgba(0,0,0,0.2); height: 100%;">
-        <h4 style="color: white; margin-top: 0; margin-bottom: 10px; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; text-align: center;">{categoria}</h4>
-        <svg width="100" height="100" viewBox="0 0 100 100">
-            <circle cx="50" cy="50" r="{radio}" stroke="#333333" stroke-width="8" fill="none" />
-            <circle cx="50" cy="50" r="{radio}" stroke="{color}" stroke-width="8" fill="none" 
-                    stroke-dasharray="{circunferencia}" stroke-dashoffset="{dash_offset}" 
-                    stroke-linecap="round" transform="rotate(-90 50 50)" 
-                    style="transition: stroke-dashoffset 1.5s ease-in-out;" />
-            <text x="50" y="45" font-family="Arial" font-size="20" font-weight="bold" fill="white" text-anchor="middle" alignment-baseline="middle">{texto_central}</text>
-            <text x="50" y="65" font-family="Arial" font-size="9" fill="#AAAAAA" text-anchor="middle" alignment-baseline="middle">VIDA ÚTIL</text>
+        # Formateamos el texto central (quitamos el % confuso)
+        texto_central = f"{int(porcentaje)}%"
+        
+        # Matemáticas para dibujar el SVG (Longitud de la circunferencia)
+        dash_array = f"{porcentaje}, 100"
+
+    # 2. CONSTRUIR EL GRÁFICO SVG
+    svg = f"""
+    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; margin-bottom: 20px;">
+        <svg viewBox="0 0 36 36" width="120" height="120">
+            <path class="circle-bg"
+                d="M18 2.0845
+                a 15.9155 15.9155 0 0 1 0 31.831
+                a 15.9155 15.9155 0 0 1 0 -31.831"
+                fill="none"
+                stroke="#333333"
+                stroke-width="3"
+            />
+            <path class="circle"
+                stroke-dasharray="{dash_array}"
+                d="M18 2.0845
+                a 15.9155 15.9155 0 0 1 0 31.831
+                a 15.9155 15.9155 0 0 1 0 -31.831"
+                fill="none"
+                stroke="{color}"
+                stroke-width="3"
+                stroke-linecap="round"
+            />
+            <text x="18" y="20" class="percentage" dominant-baseline="middle" text-anchor="middle" fill="white" font-size="8" font-weight="bold" font-family="sans-serif">{texto_central}</text>
         </svg>
-        <p style="color: {color}; font-weight: bold; font-size: 14px; margin-top: 10px; margin-bottom: 0px;">{texto_estado}</p>
-        <p style="color: #AAAAAA; font-size: 12px; margin-top: 2px; margin-bottom: 0;">{subtexto}</p>
+        <p style="color: {color}; margin: 5px 0 0 0; font-weight: bold; font-size: 16px; text-align: center;">{category}</p>
+        <p style="color: #AAAAAA; margin: 0; font-size: 12px; text-align: center;">{texto_inferior}</p>
+        <p style="color: #666666; margin: 0; font-size: 10px; text-align: center;">Meta: {int(km_meta):,} km</p>
     </div>
     """
-    return svg_html
+    return svg
     
 def render_radar(df, user):
     st.header("🏠 Radar de la Unidad (Escáner 360°)")
