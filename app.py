@@ -408,23 +408,12 @@ def render_radar(df, user):
         st.warning("No hay registros de kilometraje para esta unidad.")
         return
 
-    # OBTENER EL KILOMETRAJE ACTUAL DEL BUS
     km_actual = df_bus['km_current'].max()
     st.markdown(f"### 🚌 Bus {bus_sel} | Odómetro Actual: **{km_actual:,.0f} km**")
     st.markdown("---")
 
     # 3. CONSEGUIR LOS ÚLTIMOS MANTENIMIENTOS
     ultimos = df_bus.sort_values('date', ascending=False).drop_duplicates(subset=['category'])
-
-    # DICCIONARIO INTELIGENTE DE INTERVALOS (Si no lo tenemos, lo calculamos)
-    intervalos_standar = {
-        "aceite": 10000,
-        "llanta": 50000,
-        "caja": 40000,
-        "freno": 20000,
-        "grasa": 5000,
-        "filtro": 10000
-    }
 
     # 4. DIBUJAR LOS RADARES EN 3 COLUMNAS
     cols = st.columns(3)
@@ -433,25 +422,25 @@ def render_radar(df, user):
     for _, row in ultimos.iterrows():
         cat = str(row.get('category', 'Desconocido'))
         km_meta = row.get('km_next', 0)
+        km_cuando_se_hizo = row.get('km_current', 0)
+        observacion = str(row.get('observations', 'Sin observaciones'))
+        fecha_str = str(row.get('date', ''))[:10] # Formato YYYY-MM-DD
 
-        if km_meta > 0:
+        if km_meta > 0 and km_cuando_se_hizo > 0:
             faltan = km_meta - km_actual
             
-            # A. Descifrar el intervalo aproximado para hacer matemática real
-            intervalo = 20000 # Valor por defecto si no sabemos qué pieza es
-            for clave, valor in intervalos_standar.items():
-                if clave.lower() in cat.lower():
-                    intervalo = valor
-                    break
+            # MAGIA: Calculamos el intervalo EXACTO que tú le programaste al hacer el registro
+            intervalo_real = km_meta - km_cuando_se_hizo
             
-            # B. Calcular Porcentaje de Desgaste (0% Nuevo -> 100% Vencido)
-            desgaste_km = intervalo - faltan
-            porcentaje = int((desgaste_km / intervalo) * 100)
+            # Salvavidas: Por si hubo un error de tipeo y la meta la pusieron mal
+            if intervalo_real <= 0:
+                intervalo_real = 10000 
             
-            # Limitamos para que no se pase de 100% ni sea menor a 0% visualmente
+            desgaste_km = km_actual - km_cuando_se_hizo
+            porcentaje = int((desgaste_km / intervalo_real) * 100)
             porcentaje_visual = max(0, min(100, porcentaje))
             
-            # C. Lógica de Colores Semáforo
+            # Lógica de Colores Semáforo
             if faltan <= 0:
                 color = "#dc3545" # Rojo
                 estado = "VENCIDO"
@@ -466,13 +455,12 @@ def render_radar(df, user):
                 color = "#dc3545" # Rojo
                 estado = "CRÍTICO"
 
-            # D. Código SVG Elegante (Oscuro, número al centro)
             radio = 40
             circunferencia = 2 * 3.14159 * radio
             dashoffset = circunferencia - (porcentaje_visual / 100) * circunferencia
-            
             texto_faltan = f"Faltan: {faltan:,.0f} km" if faltan > 0 else f"Vencido por: {abs(faltan):,.0f} km"
 
+            # Tarjeta con Radar y Detalles del último trabajo
             svg = f"""
             <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: #1E2129; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
                 <h4 style="color: white; font-size: 13px; text-transform: uppercase; margin-top: 0; margin-bottom: 15px; text-align: center; height: 30px;">{cat}</h4>
@@ -484,15 +472,21 @@ def render_radar(df, user):
                     <text x="50" y="45" font-family="Arial" font-size="20" font-weight="bold" fill="white" text-anchor="middle" alignment-baseline="middle">{porcentaje_visual}%</text>
                     <text x="50" y="65" font-family="Arial" font-size="9" fill="#AAAAAA" text-anchor="middle" alignment-baseline="middle">DESGASTE</text>
                 </svg>
-                <div style="margin-top: 15px; text-align: center;">
+                <div style="margin-top: 15px; text-align: center; width: 100%;">
                     <span style="color: {color}; font-weight: 900; font-size: 14px;">{estado}</span><br>
                     <span style="color: #AAAAAA; font-size: 12px;">{texto_faltan}</span><br>
                     <span style="color: #666666; font-size: 10px;">Meta: {km_meta:,.0f} km</span>
+                    
+                    <hr style="border-color: #333333; margin: 12px 0;">
+                    
+                    <div style="background-color: #111111; padding: 10px; border-radius: 5px; text-align: left;">
+                        <span style="color: #00C6FF; font-size: 10px; font-weight: bold;">ÚLTIMO TRABAJO ({fecha_str}):</span><br>
+                        <span style="color: #DDDDDD; font-size: 11px; font-style: italic;">"{observacion}"</span>
+                    </div>
                 </div>
             </div>
             """
             
-            # Dibujamos en la columna que toque (1, 2 o 3)
             with cols[contador % 3]:
                 st.markdown(svg, unsafe_allow_html=True)
             contador += 1
