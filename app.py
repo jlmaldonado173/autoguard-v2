@@ -3,12 +3,14 @@ import pandas as pd
 from datetime import datetime, timedelta, date
 import firebase_admin
 from firebase_admin import credentials, firestore
+from firebase_admin.firestore import Increment
 from google.api_core.exceptions import FailedPrecondition
 import google.generativeai as genai 
 import plotly.express as px
 import time
 import urllib.parse
 import base64
+import math
 
 # --- 1. CONFIGURACIÓN Y ESTILOS ---
 APP_CONFIG = {
@@ -43,10 +45,14 @@ st.markdown("""
 
 # --- UTILERÍAS ---
 def format_phone(phone):
-    if not phone: return ""
+    """BUG FIX #5: Validación de longitud agregada"""
+    if not phone: 
+        return ""
     p = str(phone).replace(" ", "").replace("+", "").replace("-", "")
-    if p.startswith("0"): return "593" + p[1:]  
-    if not p.startswith("593"): return "593" + p 
+    if p.startswith("0") and len(p) > 1: 
+        return "593" + p[1:]  
+    if not p.startswith("593"): 
+        return "593" + p 
     return p
 
 # --- 2. CONFIGURACIÓN DE IA ---
@@ -289,6 +295,7 @@ def render_super_admin():
             if c3.button("🗑️ ELIMINAR FLOTA", key=f"del_{f.id}"):
                 REFS["fleets"].document(f.id).delete()
                 st.rerun()
+
 def draw_svg_gauge(category, faltan, km_meta, km_actual):
     """
     Dibuja un medidor circular (Gauge) en formato SVG.
@@ -302,48 +309,26 @@ def draw_svg_gauge(category, faltan, km_meta, km_actual):
         texto_inferior = "Sin Programar"
         dash_array = "0, 100"
     else:
-        # --- LA FÓRMULA MATEMÁTICA CORRECTA ---
-        # Si la meta es 600,000 y faltan 5,000... significa que el intervalo de uso total era 
-        # (600,000 - km_actual) + faltan. Pero como no tenemos el KM de instalación original
-        # en esta función, asumimos que "km_meta" representa el kilometraje total del bus 
-        # al momento del cambio, y "faltan" es la distancia literal hasta esa meta.
-        
-        # Para saber el intervalo real de vida de la pieza (ej: un aceite que dura 10,000km), 
-        # necesitamos el KM en el que se instaló. Si no lo tenemos a la mano, 
-        # la mejor aproximación para el desgaste es usar una escala relativa de advertencia.
-        
-        # Como los intervalos varían enormemente (Aceite=10k, Llantas=50k, Motor=500k), 
-        # mostrar un porcentaje sin conocer el intervalo original es engañoso. 
-        # En su lugar, vamos a mostrar LO QUE FALTA directamente en el centro, 
-        # y pintaremos el círculo según un sistema de semáforo de urgencia.
-        
         # Sistema de Semáforo de Urgencia (basado en kilómetros restantes):
         if faltan <= 0:
             porcentaje = 100 # Círculo lleno, rojo
             color = "#FF4B4B" # Rojo (Vencido)
             texto_inferior = f"VENCIDO por {abs(int(faltan)):,} km"
         elif faltan <= 1500:
-            # Si faltan menos de 1500km, llenamos el círculo del 80% al 99%
             porcentaje = 80 + ((1500 - faltan) / 1500) * 19
             color = "#FFAA00" # Naranja (Próximo)
             texto_inferior = f"Faltan {int(faltan):,} km"
         elif faltan <= 5000:
-            # Si faltan entre 1500km y 5000km, llenamos del 50% al 80%
             porcentaje = 50 + ((5000 - faltan) / 3500) * 30
             color = "#FFEA00" # Amarillo (Atención)
             texto_inferior = f"Faltan {int(faltan):,} km"
         else:
-            # Si faltan más de 5000km, llenamos del 1% al 50%
-            # (Mientras más falte, más vacío está el círculo)
             porcentaje = max(1, 50 - (faltan / 20000) * 50)
             if porcentaje < 1: porcentaje = 1
             color = "#4CAF50" # Verde (Óptimo)
             texto_inferior = f"Faltan {int(faltan):,} km"
 
-        # Formateamos el texto central (quitamos el % confuso)
         texto_central = f"{int(porcentaje)}%"
-        
-        # Matemáticas para dibujar el SVG (Longitud de la circunferencia)
         dash_array = f"{porcentaje}, 100"
 
     # 2. CONSTRUIR EL GRÁFICO SVG
@@ -452,7 +437,7 @@ def render_radar(df, user):
                 estado = "CRÍTICO"
 
             radio = 40
-            circunferencia = 2 * 3.14159 * radio
+            circunferencia = 2 * math.pi * radio  # BUG FIX #7: Usar math.pi
             dashoffset = circunferencia - (porcentaje_visual / 100) * circunferencia
             texto_faltan = f"Faltan: {faltan:,.0f} km" if faltan > 0 else f"Vencido por: {abs(faltan):,.0f} km"
 
@@ -543,6 +528,7 @@ def render_ai_training(user):
         st.caption("✨ Actualmente la IA está entrenada con tus reglas personalizadas.")
     else:
         st.warning("⚠️ La IA está usando parámetros genéricos. Escribe tus reglas arriba para personalizarla.")
+
 def display_top_notifications(user):
     """Muestra alertas y permite edición total al Administrador"""
     if not REFS: return
@@ -709,6 +695,7 @@ def render_communications(user):
                     st.write(f"**Tu Mensaje:** {r.get('message', '')}")
         else:
             st.info("Aún no has enviado ningún mensaje por el sistema.")
+
 def render_reports(df, user):
     st.header("📊 Reportes y Auditoría")
     if df.empty: 
@@ -720,8 +707,8 @@ def render_reports(df, user):
     with t1:
         st.subheader("📈 Análisis Financiero y Operativo")
         
-        # 1. Calculamos los costos en el dataframe original
-        df['total_cost'] = df.get('mec_cost', 0) + df.get('com_cost', 0)
+        # BUG FIX #2: Cambiar df.get() por df[]
+        df['total_cost'] = df['mec_cost'] + df['com_cost']
         
         # 2. Creamos el filtro independiente para el Administrador
         buses_disp = sorted(df['bus'].unique())
@@ -890,8 +877,9 @@ def render_reports(df, user):
         st.subheader("📜 Bitácora de Movimientos (EDICIÓN TOTAL)")
         df_sorted = df.sort_values('date', ascending=False)
         
-        lista_mecs = ["N/A"] + sorted([str(m) for m in df.get('mec_name', pd.Series()).unique() if pd.notna(m) and m not in ["N/A", ""]])
-        lista_coms = ["N/A"] + sorted([str(c) for c in df.get('com_name', pd.Series()).unique() if pd.notna(c) and c not in ["N/A", ""]])
+        # BUG FIX #3: Cambiar df.get() por df[]
+        lista_mecs = ["N/A"] + sorted([str(m) for m in df['mec_name'].unique() if pd.notna(m) and m not in ["N/A", ""]])
+        lista_coms = ["N/A"] + sorted([str(c) for c in df['com_name'].unique() if pd.notna(c) and c not in ["N/A", ""]])
         
         for _, r in df_sorted.iterrows():
             fecha_str = r['date'].strftime('%d/%m/%Y %H:%M')
@@ -981,7 +969,7 @@ def render_reports(df, user):
                         wa_text = f"Hola Administrador, necesito corregir el reporte del *Bus {r['bus']}*. Ya te envié los detalles por la campana de la App."
                         wa_link = f"https://wa.me/{format_phone(APP_CONFIG['BOSS_PHONE'])}?text={urllib.parse.quote(wa_text)}"
                         svg_whatsapp = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" width="16" height="16" fill="white" style="vertical-align: middle; margin-right: 8px;"><path d="M380.9 97.1C339 55.1 283.2 32 223.9 32c-122.4 0-222 99.6-222 222 0 39.1 10.2 77.3 29.6 111L0 480l117.7-30.9c32.4 17.7 68.9 27 106.1 27h.1c122.3 0 224.1-99.6 224.1-222 0-59.3-25.2-115-67.1-157.1zm-157 341.6c-33.2 0-65.7-8.9-94-25.7l-6.7-4-69.8 18.3L72 359.2l-4.4-7c-18.5-29.4-28.2-63.3-28.2-98.2 0-101.7 82.8-184.5 184.6-184.5 49.3 0 95.6 19.2 130.4 54.1 34.8 34.9 56.2 81.2 56.1 130.5 0 101.8-84.9 184.6-186.6 184.6zm101.2-138.2c-5.5-2.8-32.8-16.2-37.9-18-5.1-1.9-8.8-2.8-12.5 2.8-3.7 5.6-14.3 18-17.6 21.8-3.2 3.7-6.5 4.2-12 1.4-32.6-16.3-54-29.1-75.5-66-5.7-9.8 5.7-9.1 16.3-30.3 1.8-3.7.9-6.9-.5-9.7-1.4-2.8-12.5-30.1-17.1-41.2-4.5-10.8-9.1-9.3-12.5-9.5-3.2-.2-6.9-.2-10.6-.2-3.7 0-9.7 1.4-14.8 6.9-5.1 5.6-19.4 19-19.4 46.3 0 27.3 19.9 53.7 22.6 57.4 2.8 3.7 39.1 59.7 94.8 83.8 35.2 15.2 49 16.5 66.6 13.9 10.7-1.6 32.8-13.4 37.4-26.4 4.6-13 4.6-24.1 3.2-26.4-1.3-2.5-5-3.9-10.5-6.6z"/></svg>"""
-
+ 
                         col_wa.markdown(f'<a href="{wa_link}" target="_blank" class="btn-whatsapp" style="padding:10px; font-size:14px; text-align:center; display:flex; justify-content:center; align-items:center;">{svg_whatsapp} Avisar por WhatsApp</a>', unsafe_allow_html=True)
                 
                 with col_img:
@@ -990,6 +978,7 @@ def render_reports(df, user):
                             st.image(f"data:image/jpeg;base64,{r['photo_b64']}", use_container_width=True)
                         except:
                             st.error("Error de imagen")
+
 def render_accounting(df, user, phone_map):
     st.header("💰 Contabilidad y Abonos")
     
@@ -1036,8 +1025,9 @@ def render_accounting(df, user, phone_map):
                                 )
                                 
                                 if st.button(f"Registrar Pago", key=f"btn_{t}{r['id']}", type="primary", use_container_width=True):
+                                    # BUG FIX #8: Usar Increment directamente
                                     REFS["data"].collection("logs").document(r['id']).update({
-                                        paid: firestore.Increment(v)
+                                        paid: Increment(v)
                                     })
                                     
                                     nuevo_saldo = debt - v
@@ -1126,7 +1116,7 @@ def render_workshop(user, providers):
                     "fleetId": user['fleet'],
                     "bus": user['bus'],
                     "date": fecha_registro,
-                    "category": cat_final, # <-- Guardamos la nueva categoría dinámica
+                    "category": cat_final,
                     "observations": obs,
                     "km_current": ka,
                     "km_next": final_kn,
@@ -1492,7 +1482,7 @@ def render_mechanic_work(user, df, providers):
                     "fleetId": user['fleet'],
                     "bus": bus_id,
                     "date": datetime.now().isoformat(),
-                    "category": cat_final, # <-- Guardamos la nueva categoría dinámica
+                    "category": cat_final,
                     "observations": f"REPORTE MECÁNICO ({user['name']}): {obs}",
                     "km_current": km_actual, 
                     "km_next": km_proximo,    
@@ -1511,7 +1501,7 @@ def render_mechanic_work(user, df, providers):
                 st.success("✅ Reporte enviado. Los radares han sido actualizados.")
                 time.sleep(1)
                 st.rerun()
-                
+
 def render_ai_chat(df, user):
     html_header = """
 <div style="display:flex; align-items:center; gap:18px; margin-bottom: 5px; padding-bottom: 15px; border-bottom: 1px solid #333333;">
@@ -1574,7 +1564,7 @@ def render_ai_chat(df, user):
                 # B. Construir un resumen exacto del estado de los buses
                 contexto_datos = "ESTADO ACTUAL DE LOS MANTENIMIENTOS DE LA FLOTA:\n"
                 if not df.empty:
-                    df['total_cost'] = df.get('mec_cost', 0) + df.get('com_cost', 0)
+                    df['total_cost'] = df['mec_cost'] + df['com_cost']
                     km_reales = df.groupby('bus')['km_current'].max().to_dict()
                     ultimos_mantenimientos = df.sort_values('date', ascending=False).drop_duplicates(subset=['bus', 'category'])
                     
@@ -1629,6 +1619,7 @@ def render_ai_chat(df, user):
                 
             except Exception as e:
                 st.error(f"Hubo un error al conectar con el cerebro de IA Itero: {e}")
+
 def render_cierre_caja(df, user):
     st.header("💵 Cierre de Caja y Rentabilidad")
     st.caption("Evalúa y guarda la rentabilidad de tu flota. Todo quedará registrado en el historial.")
@@ -1726,7 +1717,7 @@ def render_cierre_caja(df, user):
                 st.warning(f"⚖️ **PUNTO DE EQUILIBRIO:** $0.00")
                 
             time.sleep(1.5)
-            st.rerun() # Recargamos para que aparezca en la tabla de abajo
+            st.rerun()
 
     # 5. TABLA DE HISTORIAL DE CIERRES
     st.markdown("---")
@@ -1802,7 +1793,7 @@ def main():
             # ---> MENÚ CONDUCTOR <---
             menu = {
                 "🏠 Radar de Unidad": lambda: render_radar(df, u),
-                "🤖 Chat IA": lambda: render_ai_chat(df, u), # <--- AGREGADO
+                "🤖 Chat IA": lambda: render_ai_chat(df, u),
                 "💰 Pagos y Abonos": lambda: render_accounting(df, u, phone_map),
                 "📊 Reportes": lambda: render_reports(df, u), 
                 "🛠️ Reportar Taller": lambda: render_workshop(u, provs),
@@ -1819,7 +1810,7 @@ def main():
             # ---> MENÚ MECÁNICO <---
             menu = {
                 "🏠 Radar de Taller": lambda: render_radar(df, u),
-                "🤖 Chat IA": lambda: render_ai_chat(df, u), # <--- AGREGADO
+                "🤖 Chat IA": lambda: render_ai_chat(df, u),
                 "📝 Registrar Trabajo": lambda: render_mechanic_work(u, df, provs),
                 "📊 Historial Técnico": lambda: render_reports(df, u), 
                 "💬 Mensajes": lambda: render_communications(u),
@@ -1833,9 +1824,10 @@ def main():
             render_radar(df, u)
             st.divider()
             
-           # ---> MENÚ DUEÑO <---
+            # BUG FIX #4: Indentación correcta
+            # ---> MENÚ DUEÑO <---
             menu = {
-                "💵 Cierre de Caja": lambda: render_cierre_caja(df, u), # <--- AQUÍ ESTÁ EL NUEVO MÓDULO
+                "💵 Cierre de Caja": lambda: render_cierre_caja(df, u),
                 "🏠 Radar / Escáner": lambda: render_radar(df, u),
                 "🤖 Chat Asistente IA": lambda: render_ai_chat(df, u),
                 "📊 Reportes": lambda: render_reports(df, u), 
