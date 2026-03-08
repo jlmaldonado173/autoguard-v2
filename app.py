@@ -427,7 +427,7 @@ def render_radar(df, user):
         
         with col:
             # Dibujamos el reloj SVG
-            reloj_svg = draw_svg_gauge(cat, faltan, meta)
+            reloj_svg = draw_svg_gauge(cat, faltan, meta, km_actual_real)
             st.markdown(reloj_svg, unsafe_allow_html=True)
             
             # --- NUEVO: VENTANA EMERGENTE (POPOVER) DE INFORMACIÓN ---
