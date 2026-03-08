@@ -459,7 +459,7 @@ def render_radar(df, user):
             texto_faltan = f"Faltan: {faltan:,.0f} km" if faltan > 0 else f"Vencido por: {abs(faltan):,.0f} km"
 
             # ---------------------------------------------------------
-            # HTML SIN SANGRIAS PARA EVITAR QUE STREAMLIT SE CONFUNDA
+            # HTML CON BOTÓN DESPLEGABLE PARA OCULTAR EL TEXTO LARGO
             # ---------------------------------------------------------
             svg = f"""
 <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: #1E2129; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
@@ -475,10 +475,15 @@ def render_radar(df, user):
 <span style="color: #AAAAAA; font-size: 12px;">{texto_faltan}</span><br>
 <span style="color: #666666; font-size: 10px;">Meta: {km_meta:,.0f} km</span>
 <hr style="border-color: #333333; margin: 12px 0;">
-<div style="background-color: #111111; padding: 10px; border-radius: 5px; text-align: left;">
-<span style="color: #00C6FF; font-size: 10px; font-weight: bold;">ÚLTIMO TRABAJO ({fecha_str}):</span><br>
+<details style="text-align: left; width: 100%; cursor: pointer;">
+<summary style="color: #00C6FF; font-size: 11px; font-weight: bold; padding: 8px; background-color: #2A2D35; border-radius: 5px; outline: none; text-align: left;">
+👇 VER DETALLE...
+</summary>
+<div style="background-color: #111111; padding: 10px; border-radius: 5px; margin-top: 5px;">
+<span style="color: #00C6FF; font-size: 10px; font-weight: bold;">FECHA: {fecha_str}</span><br>
 <span style="color: #DDDDDD; font-size: 11px; font-style: italic;">"{observacion}"</span>
 </div>
+</details>
 </div>
 </div>
 """
