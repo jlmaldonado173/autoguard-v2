@@ -423,8 +423,6 @@ def render_radar(df, user):
         cat = str(row.get('category', 'Desconocido'))
         km_meta = row.get('km_next', 0)
         km_cuando_se_hizo = row.get('km_current', 0)
-        observacion = str(row.get('observations', 'Sin observaciones'))
-        fecha_str = str(row.get('date', ''))[:10] # Formato YYYY-MM-DD
 
         if km_meta > 0 and km_cuando_se_hizo > 0:
             faltan = km_meta - km_actual
@@ -459,10 +457,10 @@ def render_radar(df, user):
             texto_faltan = f"Faltan: {faltan:,.0f} km" if faltan > 0 else f"Vencido por: {abs(faltan):,.0f} km"
 
             # ---------------------------------------------------------
-            # HTML CON BOTÓN DESPLEGABLE PARA OCULTAR EL TEXTO LARGO
+            # DIBUJAMOS SOLO EL RADAR EN HTML
             # ---------------------------------------------------------
             svg = f"""
-<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: #1E2129; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
+<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: #1E2129; padding: 20px; border-radius: 10px; margin-bottom: 5px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
 <h4 style="color: white; font-size: 13px; text-transform: uppercase; margin-top: 0; margin-bottom: 15px; text-align: center; height: 30px;">{cat}</h4>
 <svg width="120" height="120" viewBox="0 0 100 100">
 <circle cx="50" cy="50" r="{radio}" fill="none" stroke="#333333" stroke-width="8" />
@@ -474,22 +472,30 @@ def render_radar(df, user):
 <span style="color: {color}; font-weight: 900; font-size: 14px;">{estado}</span><br>
 <span style="color: #AAAAAA; font-size: 12px;">{texto_faltan}</span><br>
 <span style="color: #666666; font-size: 10px;">Meta: {km_meta:,.0f} km</span>
-<hr style="border-color: #333333; margin: 12px 0;">
-<details style="text-align: left; width: 100%; cursor: pointer;">
-<summary style="color: #00C6FF; font-size: 11px; font-weight: bold; padding: 8px; background-color: #2A2D35; border-radius: 5px; outline: none; text-align: left;">
-👇 VER DETALLE...
-</summary>
-<div style="background-color: #111111; padding: 10px; border-radius: 5px; margin-top: 5px;">
-<span style="color: #00C6FF; font-size: 10px; font-weight: bold;">FECHA: {fecha_str}</span><br>
-<span style="color: #DDDDDD; font-size: 11px; font-style: italic;">"{observacion}"</span>
-</div>
-</details>
 </div>
 </div>
 """
             
             with cols[contador % 3]:
+                # 1. Dibujamos la tarjeta gráfica
                 st.markdown(svg, unsafe_allow_html=True)
+                
+                # 2. AGREGAMOS EL HISTORIAL OFICIAL DE LA APP DEBAJO
+                with st.expander(f"📜 Historial de {cat}"):
+                    # Buscamos los últimos 5 registros de ESTA pieza en específico
+                    historial_cat = df_bus[df_bus['category'] == cat].sort_values('date', ascending=False).head(5)
+                    
+                    for _, h_row in historial_cat.iterrows():
+                        h_fecha = str(h_row.get('date', ''))[:10]
+                        h_obs = str(h_row.get('observations', 'Sin observaciones'))
+                        h_costo = float(h_row.get('mec_cost', 0)) + float(h_row.get('com_cost', 0))
+                        
+                        st.markdown(f"**📅 {h_fecha}**")
+                        st.caption(f"_{h_obs}_")
+                        if h_costo > 0:
+                            st.markdown(f"<span style='color:#28a745; font-size:12px;'>💰 Inversión: ${h_costo:,.2f}</span>", unsafe_allow_html=True)
+                        st.divider()
+
             contador += 1
                     
 def render_ai_training(user):
